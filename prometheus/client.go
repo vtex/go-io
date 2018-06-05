@@ -73,5 +73,8 @@ func InitClient() {
 }
 
 func GetClient() PrometheusClient {
+	if client == nil {
+		panic("Init the prometheus client before access it")
+	}
 	return client
 }
