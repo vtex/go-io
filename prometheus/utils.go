@@ -20,12 +20,31 @@ func EndRequest(g *gin.Context) {
 	GetClient().CloseRequest(getRequestInfo(g), strconv.Itoa(g.Writer.Status()))
 }
 
+func InitRequestWithPath(path string) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		reqData := prepareRequestInfo(g, path)
+		GetClient().OpenRequest(reqData)
+	}
+}
+
+func EndRequestWithPath(path string) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		reqData := prepareRequestInfo(g, path)
+		GetClient().CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
+	}
+}
+
 func getRequestInfo(g *gin.Context) RequestData {
-	path := strings.SplitN(g.Request.URL.Path, "/", 4)
+	pathSplitted := strings.SplitN(g.Request.URL.Path, "/", 4)
+	path := "/" + pathSplitted[3]
+	return prepareRequestInfo(g, path)
+}
+
+func prepareRequestInfo(g *gin.Context, path string) RequestData {
 	return RequestData{
 		Account:   g.Param("account"),
 		Workspace: g.Param("workspace"),
 		Method:    g.Request.Method,
-		Path:      "/" + path[3],
+		Path:      path,
 	}
 }
