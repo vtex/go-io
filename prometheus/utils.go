@@ -34,6 +34,11 @@ func EndRequestWithPath(path string) gin.HandlerFunc {
 	}
 }
 
+func ObserveWithPath(g *gin.Context, init time.Time, path string) {
+	reqData := prepareRequestInfo(g, path)
+	GetClient().ObserveDuration(reqData, init)
+}
+
 func getRequestInfo(g *gin.Context) RequestData {
 	pathSplitted := strings.SplitN(g.Request.URL.Path, "/", 4)
 	path := "/" + pathSplitted[3]
