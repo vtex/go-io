@@ -6,15 +6,21 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/gin-gonic/gin/render"
 	"github.com/pkg/errors"
 )
 
-const defaultFlushInterval = 50 * time.Millisecond
+const (
+	defaultFlushInterval = 50 * time.Millisecond
+	contentTypeHeader    = "Content-Type"
+)
 
 type ChunkedData struct {
 	contentType string
 	data        io.Reader
 }
+
+var _ render.Render = (*ChunkedData)(nil)
 
 func NewChunkedData(contentType string, data io.Reader) *ChunkedData {
 	return &ChunkedData{
@@ -24,9 +30,7 @@ func NewChunkedData(contentType string, data io.Reader) *ChunkedData {
 }
 
 func (c *ChunkedData) Render(w http.ResponseWriter) error {
-	if c.contentType != "" {
-		w.Header().Set("Content-Type", c.contentType)
-	}
+	c.WriteContentType(w)
 
 	err := copyResponse(w, c.data)
 	if err != nil {
@@ -38,6 +42,12 @@ func (c *ChunkedData) Render(w http.ResponseWriter) error {
 
 	// Errors from Render are panicked upon so we always return nil.
 	return nil
+}
+
+func (c *ChunkedData) WriteContentType(w http.ResponseWriter) {
+	if c.contentType != "" && w.Header().Get(contentTypeHeader) == "" {
+		w.Header().Set(contentTypeHeader, c.contentType)
+	}
 }
 
 func copyResponse(dst io.Writer, src io.Reader) error {
