@@ -8,35 +8,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func InitRequest(g *gin.Context) {
-	GetClient().OpenRequest(getRequestInfo(g))
-}
-
-func Observe(g *gin.Context, init time.Time) {
-	GetClient().ObserveDuration(getRequestInfo(g), init)
-}
-
-func EndRequest(g *gin.Context) {
-	GetClient().CloseRequest(getRequestInfo(g), strconv.Itoa(g.Writer.Status()))
-}
-
-func InitRequestWithPath(path string) gin.HandlerFunc {
+func MetricsTracker() gin.HandlerFunc {
 	return func(g *gin.Context) {
-		reqData := prepareRequestInfo(g, path)
-		GetClient().OpenRequest(reqData)
+		now := time.Now()
+		reqData := getRequestInfo(g)
+		client.OpenRequest(reqData)
+
+		g.Next()
+
+		client.ObserveDuration(reqData, now)
+		client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
 	}
 }
 
-func EndRequestWithPath(path string) gin.HandlerFunc {
+func MetricsTrackerWithPath(path string) gin.HandlerFunc {
 	return func(g *gin.Context) {
+		now := time.Now()
 		reqData := prepareRequestInfo(g, path)
-		GetClient().CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
-	}
-}
+		client.OpenRequest(reqData)
 
-func ObserveWithPath(g *gin.Context, init time.Time, path string) {
-	reqData := prepareRequestInfo(g, path)
-	GetClient().ObserveDuration(reqData, init)
+		g.Next()
+
+		client.ObserveDuration(reqData, now)
+		client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
+	}
 }
 
 func getRequestInfo(g *gin.Context) RequestData {
