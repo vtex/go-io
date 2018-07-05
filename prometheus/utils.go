@@ -10,28 +10,26 @@ import (
 
 func MetricsTracker() gin.HandlerFunc {
 	return func(g *gin.Context) {
-		now := time.Now()
 		reqData := getRequestInfo(g)
-		client.OpenRequest(reqData)
-
-		g.Next()
-
-		client.ObserveDuration(reqData, now)
-		client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
+		startTracker(g, reqData)
 	}
 }
 
 func MetricsTrackerWithPath(path string) gin.HandlerFunc {
 	return func(g *gin.Context) {
-		now := time.Now()
 		reqData := prepareRequestInfo(g, path)
-		client.OpenRequest(reqData)
-
-		g.Next()
-
-		client.ObserveDuration(reqData, now)
-		client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
+		startTracker(g, reqData)
 	}
+}
+
+func startTracker(g *gin.Context, reqData RequestData) {
+	startTime := time.Now()
+	client.OpenRequest(reqData)
+
+	g.Next()
+
+	client.ObserveDuration(reqData, startTime)
+	client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
 }
 
 func getRequestInfo(g *gin.Context) RequestData {
