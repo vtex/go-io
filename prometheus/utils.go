@@ -2,22 +2,14 @@ package prometheus
 
 import (
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-func MetricsTracker() gin.HandlerFunc {
+func MetricsTracker(serviceName string, version string, path string) gin.HandlerFunc {
 	return func(g *gin.Context) {
-		reqData := getRequestInfo(g)
-		startTracker(g, reqData)
-	}
-}
-
-func MetricsTrackerWithPath(path string) gin.HandlerFunc {
-	return func(g *gin.Context) {
-		reqData := prepareRequestInfo(g, path)
+		reqData := prepareRequestInfo(serviceName, version, path, g)
 		startTracker(g, reqData)
 	}
 }
@@ -32,17 +24,11 @@ func startTracker(g *gin.Context, reqData RequestData) {
 	client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
 }
 
-func getRequestInfo(g *gin.Context) RequestData {
-	pathSplitted := strings.SplitN(g.Request.URL.Path, "/", 4)
-	path := "/" + pathSplitted[3]
-	return prepareRequestInfo(g, path)
-}
-
-func prepareRequestInfo(g *gin.Context, path string) RequestData {
+func prepareRequestInfo(serviceName string, version string, path string, g *gin.Context) RequestData {
 	return RequestData{
-		Account:   g.Param("account"),
-		Workspace: g.Param("workspace"),
-		Method:    g.Request.Method,
-		Path:      path,
+		ServiceName: serviceName,
+		Version:     version,
+		Method:      g.Request.Method,
+		Path:        path,
 	}
 }

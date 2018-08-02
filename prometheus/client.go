@@ -10,17 +10,17 @@ var (
 	requestsMapStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "io_http_requests_total",
 		Help: "The total number of requests which were performed.",
-	}, []string{"account", "workspace", "method", "path", "status"})
+	}, []string{"serviceName", "version", "method", "path", "status"})
 
 	requestsMapCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "io_http_requests_current",
 		Help: "The current number of requests in course.",
-	}, []string{"account", "workspace", "method", "path"})
+	}, []string{"serviceName", "version", "method", "path"})
 
 	requestsMapDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "io_http_request_duration_seconds",
 		Help: "The duration of the requests in seconds.",
-	}, []string{"account", "workspace", "method", "path"})
+	}, []string{"serviceName", "version", "method", "path"})
 )
 
 var client PrometheusClient
@@ -35,7 +35,7 @@ type prometheusClient struct {
 }
 
 type RequestData struct {
-	Account, Workspace, Method, Path string
+	ServiceName, Version, Method, Path string
 }
 
 func (p *prometheusClient) OpenRequest(req RequestData) {
@@ -57,7 +57,7 @@ func (p *prometheusClient) CloseRequest(req RequestData, status string) {
 }
 
 func getDefaultLabels(req RequestData) prometheus.Labels {
-	return prometheus.Labels{"account": req.Account, "workspace": req.Workspace, "method": req.Method, "path": req.Path}
+	return prometheus.Labels{"serviceName": req.ServiceName, "version": req.Version, "method": req.Method, "path": req.Path}
 }
 
 func InitClient() {
