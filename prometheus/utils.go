@@ -7,20 +7,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func MetricsTracker(serviceName string, version string, path string) gin.HandlerFunc {
+func RequestsStatusTracker(serviceName string, version string, path string) gin.HandlerFunc {
 	return func(g *gin.Context) {
-		reqData := prepareRequestInfo(serviceName, version, path, g)
-		startTracker(g, reqData)
+		startTracker(g, serviceName, version, path, false)
 	}
 }
 
-func startTracker(g *gin.Context, reqData RequestData) {
+func MetricsTracker(serviceName string, version string, path string) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		startTracker(g, serviceName, version, path, true)
+	}
+}
+
+func startTracker(g *gin.Context, serviceName, version, path string, withLatency bool) {
 	startTime := time.Now()
+	reqData := prepareRequestInfo(serviceName, version, path, g)
 	client.OpenRequest(reqData)
 
 	g.Next()
 
-	client.ObserveDuration(reqData, startTime)
+	if withLatency {
+		client.ObserveDuration(reqData, startTime)
+	}
 	client.CloseRequest(reqData, strconv.Itoa(g.Writer.Status()))
 }
 
