@@ -104,8 +104,8 @@ func (r *redisC) GetOrSet(key string, result interface{}, duration time.Duration
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	conn := r.pool.Get()
+	defer conn.Close()
 	reply, err := conn.Do(cmd, args...)
-	conn.Close()
 	return reply, err
 }
 
