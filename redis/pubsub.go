@@ -54,8 +54,12 @@ type redisPubSub struct {
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (RedisSubChan, error) {
-	recvCh, newPatterns := r.startSub(patterns)
+	patterns, err := remoteKeys(r.keyNamespace, patterns)
+	if err != nil {
+		return nil, err
+	}
 
+	recvCh, newPatterns := r.startSub(patterns)
 	if len(newPatterns) > 0 {
 		if err := r.subscriptionConn.PSubscribe(newPatterns...); err != nil {
 			r.deactivate(recvCh)
@@ -77,6 +81,11 @@ func (r *redisPubSub) PUnsubscribe(sub RedisSubChan) error {
 }
 
 func (r *redisPubSub) Publish(key string, data []byte) error {
+	key, err := remoteKey(r.keyNamespace, key)
+	if err != nil {
+		return err
+	}
+
 	if _, err := r.doCmd("PUBLISH", key, string(data)); err != nil {
 		return errors.WithStack(err)
 	}

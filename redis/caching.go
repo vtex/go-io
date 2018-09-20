@@ -108,10 +108,3 @@ func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	reply, err := conn.Do(cmd, args...)
 	return reply, err
 }
-
-func remoteKey(ns, key string) (string, error) {
-	if key == "" {
-		return "", errors.Errorf("Cache key must not be empty")
-	}
-	return ns + ":" + key, nil
-}
