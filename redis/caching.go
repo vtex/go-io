@@ -2,7 +2,6 @@ package redis
 
 import (
 	"encoding/json"
-	"sync"
 
 	"time"
 
@@ -42,7 +41,6 @@ func New(endpoint, keyNamespace string) Redis {
 }
 
 type redisC struct {
-	lock         sync.RWMutex
 	pool         *redis.Pool
 	keyNamespace string
 }
