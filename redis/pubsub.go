@@ -92,7 +92,7 @@ func (r *redisPubSub) mainLoop() {
 				msgChan <- v
 
 			case error:
-				logErrorColossus(v, "pubsub_error", "Redis pub/sub error")
+				logError(v, "pubsub_error", r.keyNamespace, "", "Redis pub/sub error")
 				r.recoverPubSubConn()
 			}
 		}
@@ -162,7 +162,7 @@ func (r *redisPubSub) deactivate(subChan RedisSubChan) []interface{} {
 // Retries to reset pub/sub connection until no error occurrs
 func (r *redisPubSub) recoverPubSubConn() {
 	if err := r.subscriptionConn.Conn.Err(); err != nil {
-		logErrorColossus(err, "redis_conn_error", "Redis connection error")
+		logError(err, "redis_conn_error", r.keyNamespace, "", "Redis connection error")
 	}
 
 	for {
@@ -170,7 +170,7 @@ func (r *redisPubSub) recoverPubSubConn() {
 		if err == nil {
 			break
 		}
-		logErrorColossus(err, "redis_conn_reset_error", "Error resetting Redis connection")
+		logError(err, "redis_conn_reset_error", r.keyNamespace, "", "Error resetting Redis connection")
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -227,8 +227,4 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 			sub.sendCh <- data
 		}
 	}
-}
-
-func logErrorColossus(err error, code, msg string) {
-	logrus.WithError(err).WithField("code", code).Error(msg)
 }

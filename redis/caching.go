@@ -5,7 +5,6 @@ import (
 
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
 	"github.com/pkg/errors"
 	"github.com/vtex/go-io/util"
@@ -108,16 +107,6 @@ func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	defer conn.Close()
 	reply, err := conn.Do(cmd, args...)
 	return reply, err
-}
-
-func logError(err error, code, namespace, key, msg string) {
-	logrus.WithError(err).
-		WithFields(logrus.Fields{
-			"code":         code,
-			"category":     "redis_cache",
-			"keyNamespace": namespace,
-			"key":          key,
-		}).Error(msg)
 }
 
 func remoteKey(ns, key string) (string, error) {
