@@ -19,7 +19,7 @@ type RedisPubSub interface {
 }
 
 func NewPubSub(endpoint, keyNamespace string) (Redis, error) {
-	pool := newRedisPool(endpoint, 10, 20)
+	pool := newRedisPool(endpoint, 50, 100)
 
 	pubsub := &redisPubSub{
 		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},

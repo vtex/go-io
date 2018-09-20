@@ -38,7 +38,7 @@ func newRedisPool(endpoint string, maxIdle, maxActive int) *redis.Pool {
 }
 
 func New(endpoint, keyNamespace string) Redis {
-	pool := newRedisPool(endpoint, 5, 10)
+	pool := newRedisPool(endpoint, 50, 100)
 	return &redisC{pool: pool, keyNamespace: keyNamespace}
 }
 
