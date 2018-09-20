@@ -19,8 +19,8 @@ type Redis interface {
 	GetOrSet(key string, result interface{}, duration time.Duration, fetch func() (interface{}, error)) error
 }
 
-func New(endpoint, keyNamespace string) Redis {
-	pool := &redis.Pool{
+func newRedisPool(endpoint string, maxIdle, maxActive int) *redis.Pool {
+	return &redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			return redis.Dial("tcp", endpoint, redis.DialConnectTimeout(1*time.Second))
 		},
@@ -31,12 +31,15 @@ func New(endpoint, keyNamespace string) Redis {
 			_, err := conn.Do("PING")
 			return err
 		},
-		MaxIdle:     5,
-		MaxActive:   10,
+		MaxIdle:     maxIdle,
+		MaxActive:   maxActive,
 		Wait:        true,
 		IdleTimeout: 3 * time.Minute,
 	}
+}
 
+func New(endpoint, keyNamespace string) Redis {
+	pool := newRedisPool(endpoint, 5, 10)
 	return &redisC{pool: pool, keyNamespace: keyNamespace}
 }
 
