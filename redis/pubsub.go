@@ -18,7 +18,7 @@ type RedisPubSub interface {
 	Publish(key string, data []byte) error
 }
 
-func NewPubSub(endpoint, keyNamespace string) (Redis, error) {
+func NewPubSub(endpoint, keyNamespace string) (RedisPubSub, error) {
 	pool := newRedisPool(endpoint, 50, 100)
 
 	pubsub := &redisPubSub{
