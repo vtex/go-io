@@ -9,21 +9,21 @@ import (
 	"github.com/pkg/errors"
 )
 
-type RedisSubChan <-chan []byte
+type SubChan <-chan []byte
 
-type RedisPubSub interface {
-	Redis
-	PSubscribe(patterns []string) (RedisSubChan, error)
-	PUnsubscribe(sub RedisSubChan) error
+type PubSub interface {
+	Cache
+	PSubscribe(patterns []string) (SubChan, error)
+	PUnsubscribe(sub SubChan) error
 	Publish(key string, data []byte) error
 }
 
-func NewPubSub(endpoint, keyNamespace string) (RedisPubSub, error) {
+func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	pool := newRedisPool(endpoint, 50, 100)
 
 	pubsub := &redisPubSub{
 		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},
-		subsByChan:    map[RedisSubChan]*subscription{},
+		subsByChan:    map[SubChan]*subscription{},
 		subsByPattern: map[string]map[*subscription]bool{},
 	}
 	if err := pubsub.resetPubSubConn(); err != nil {
@@ -49,11 +49,11 @@ type redisPubSub struct {
 	// subsByPattern they are indexed by subscription pattern so that receiving
 	// from a Redis channel and forwarding to applicable subscriptions doesn't
 	// need iterating through all subscriptions.
-	subsByChan    map[RedisSubChan]*subscription
+	subsByChan    map[SubChan]*subscription
 	subsByPattern map[string]map[*subscription]bool
 }
 
-func (r *redisPubSub) PSubscribe(patterns []string) (RedisSubChan, error) {
+func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 	patterns, err := remoteKeys(r.keyNamespace, patterns)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (r *redisPubSub) PSubscribe(patterns []string) (RedisSubChan, error) {
 	return recvCh, nil
 }
 
-func (r *redisPubSub) PUnsubscribe(sub RedisSubChan) error {
+func (r *redisPubSub) PUnsubscribe(sub SubChan) error {
 	unusedPatterns := r.deactivate(sub)
 
 	if len(unusedPatterns) > 0 {
@@ -118,7 +118,7 @@ func (r *redisPubSub) mainLoop() {
 	}
 }
 
-func (r *redisPubSub) startSub(patterns []string) (RedisSubChan, []interface{}) {
+func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -126,7 +126,7 @@ func (r *redisPubSub) startSub(patterns []string) (RedisSubChan, []interface{}) 
 		patterns: patterns,
 		sendCh:   make(chan []byte, 1),
 	}
-	recvCh := RedisSubChan(sub.sendCh)
+	recvCh := SubChan(sub.sendCh)
 	r.subsByChan[recvCh] = sub
 
 	newPatterns := []interface{}{}
@@ -143,7 +143,7 @@ func (r *redisPubSub) startSub(patterns []string) (RedisSubChan, []interface{}) 
 	return recvCh, newPatterns
 }
 
-func (r *redisPubSub) deactivate(subChan RedisSubChan) []interface{} {
+func (r *redisPubSub) deactivate(subChan SubChan) []interface{} {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 

@@ -12,7 +12,7 @@ import (
 
 const pingDelay = 60 * time.Second
 
-type Redis interface {
+type Cache interface {
 	Get(key string, result interface{}) (bool, error)
 	Set(key string, value interface{}, expireIn time.Duration) error
 	GetOrSet(key string, result interface{}, duration time.Duration, fetch func() (interface{}, error)) error
@@ -37,7 +37,7 @@ func newRedisPool(endpoint string, maxIdle, maxActive int) *redis.Pool {
 	}
 }
 
-func New(endpoint, keyNamespace string) Redis {
+func New(endpoint, keyNamespace string) Cache {
 	pool := newRedisPool(endpoint, 50, 100)
 	return &redisC{pool: pool, keyNamespace: keyNamespace}
 }
