@@ -12,10 +12,17 @@ import (
 
 const pingDelay = 60 * time.Second
 
+type SetOptions struct {
+	ExpireIn   time.Duration
+	IfNotExist bool
+}
+
 type Cache interface {
 	Get(key string, result interface{}) (bool, error)
 	Set(key string, value interface{}, expireIn time.Duration) error
-	GetOrSet(key string, result interface{}, duration time.Duration, fetch func() (interface{}, error)) error
+	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
+	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
+	Del(key string) error
 }
 
 func newRedisPool(endpoint string, maxIdle, maxActive int) *redis.Pool {
@@ -69,24 +76,34 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 }
 
 func (r *redisC) Set(key string, value interface{}, expireIn time.Duration) error {
+	_, err := r.SetOpt(key, value, SetOptions{ExpireIn: expireIn})
+	return err
+}
+
+func (r *redisC) SetOpt(key string, value interface{}, options SetOptions) (bool, error) {
 	key, err := remoteKey(r.keyNamespace, key)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	bytes, err := json.Marshal(value)
 	if err != nil {
-		return errors.Wrap(err, "Failed to save data to Redis")
+		return false, errors.Wrap(err, "Failed to marshal value for saving to Redis")
 	}
 
-	if _, err := r.doCmd("SET", key, bytes, "EX", int(expireIn.Seconds())); err != nil {
-		return errors.WithStack(err)
+	args := []interface{}{key, bytes, "EX", int(options.ExpireIn.Seconds())}
+	if options.IfNotExist {
+		args = append(args, "NX")
 	}
 
-	return nil
+	res, err := r.doCmd("SET", args...)
+	if err != nil {
+		return false, errors.Wrap(err, "Failed SET command on Redis")
+	}
+	return res != nil, nil
 }
 
-func (r *redisC) GetOrSet(key string, result interface{}, duration time.Duration, fetch func() (interface{}, error)) error {
+func (r *redisC) GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error {
 	if ok, err := r.Get(key, result); ok {
 		return nil
 	} else if err != nil {
@@ -98,8 +115,20 @@ func (r *redisC) GetOrSet(key string, result interface{}, duration time.Duration
 		return err
 	}
 
-	r.Set(key, value, duration)
+	r.Set(key, value, expireIn)
 	return util.SetPointer(result, value)
+}
+
+func (r *redisC) Del(key string) error {
+	key, err := remoteKey(r.keyNamespace, key)
+	if err != nil {
+		return err
+	}
+
+	if _, err := r.doCmd("DEL", key); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
