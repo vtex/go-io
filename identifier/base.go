@@ -18,7 +18,6 @@ type ID interface {
 // version specification in the suffix.
 type Composed interface {
 	ID
-	MatchesOpt(other ID, opts MatchOptions) bool
 	Prefix() string
 	Suffix() string
 }
@@ -31,4 +30,5 @@ type Qualified interface {
 	Vendor() string
 	Name() string
 	ToPartial() *Partial
+	MatchesOpt(other ID, opts MatchOptions) bool
 }
