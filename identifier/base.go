@@ -8,7 +8,6 @@ type MatchOptions struct {
 type ID interface {
 	String() string
 	Matches(other ID) bool
-	MatchesOpt(other ID, opts MatchOptions) bool
 	LessThan(other ID) bool
 
 	compare(other ID) int
@@ -19,6 +18,7 @@ type ID interface {
 // version specification in the suffix.
 type Composed interface {
 	ID
+	MatchesOpt(other ID, opts MatchOptions) bool
 	Prefix() string
 	Suffix() string
 }
