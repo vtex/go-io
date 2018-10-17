@@ -64,9 +64,7 @@ func (id *Range) compareOpt(other ID, opt MatchOptions) int {
 
 		version := other.Version
 		if opt.IgnorePrerelease {
-			// This will never fail as the only error would be a bad Prerelease.
-			copy, _ := version.SetPrerelease("")
-			version = &copy
+			version = StripPrerelease(version)
 		}
 		if id.Range.Check(version) {
 			return 0

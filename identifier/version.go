@@ -58,7 +58,7 @@ func (id *Version) Matches(other ID) bool {
 }
 
 func (id *Version) MatchesOpt(other ID, opt MatchOptions) bool {
-	return id.Matches(other)
+	return id.compareOpt(other, opt) == 0
 }
 
 func (id *Version) LessThan(other ID) bool {
@@ -66,20 +66,32 @@ func (id *Version) LessThan(other ID) bool {
 }
 
 func (id *Version) compare(other ID) int {
+	return id.compareOpt(other, MatchOptions{})
+}
+
+func (id *Version) compareOpt(other ID, opt MatchOptions) int {
+	version := id.Version
+	if opt.IgnorePrerelease {
+		version = StripPrerelease(version)
+	}
 	switch other := other.(type) {
 	case *Version:
 		pidComparison := strings.Compare(id.Prefix(), other.Prefix())
-		if pidComparison == 0 {
-			return id.Version.Compare(other.Version)
+		if pidComparison != 0 {
+			return pidComparison
 		}
-		return pidComparison
+		otherVersion := other.Version
+		if opt.IgnorePrerelease {
+			otherVersion = StripPrerelease(otherVersion)
+		}
+		return version.Compare(otherVersion)
 	case *Range:
 		pidComparison := strings.Compare(id.Prefix(), other.Prefix())
 		if pidComparison == 0 {
-			if other.Range.Check(id.Version) {
+			if other.Range.Check(version) {
 				return 0
 			}
-			return strings.Compare(id.rawVersion, other.rawRange)
+			return strings.Compare(version.String(), other.rawRange)
 		}
 		return pidComparison
 	case *Tag:
