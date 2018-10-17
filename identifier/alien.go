@@ -13,6 +13,9 @@ type Alien struct {
 	Version string
 }
 
+// Assert Alien implements Composed interface.
+var _ Composed = (*Alien)(nil)
+
 func NewAlien(engine, pkg, version string) *Alien {
 	return &Alien{
 		raw:     engine + ":" + pkg + "@" + version,
