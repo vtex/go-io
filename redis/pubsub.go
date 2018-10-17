@@ -98,7 +98,11 @@ func (r *redisPubSub) mainLoop() {
 	for {
 		select {
 		case <-pingTicker.C:
-			r.subscriptionConn.Ping("")
+			err := r.subscriptionConn.Ping("")
+			if err != nil {
+				logError(err, "pubsub_ping_error", r.keyNamespace, "", "Redis error pinging pub/sub connection")
+				r.recoverPubSubConn()
+			}
 		case msg := <-msgChan:
 			r.send(msg.Pattern, msg.Data)
 		}
