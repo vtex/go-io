@@ -29,6 +29,10 @@ func (id *Partial) Matches(other ID) bool {
 	return id.compare(other) == 0
 }
 
+func (id *Partial) MatchesOpt(other ID, opt MatchOptions) bool {
+	return id.Matches(other)
+}
+
 func (id *Partial) LessThan(other ID) bool {
 	return id.compare(other) < 0
 }

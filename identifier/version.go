@@ -57,6 +57,10 @@ func (id *Version) Matches(other ID) bool {
 	return id.compare(other) == 0
 }
 
+func (id *Version) MatchesOpt(other ID, opt MatchOptions) bool {
+	return id.Matches(other)
+}
+
 func (id *Version) LessThan(other ID) bool {
 	return id.compare(other) < 0
 }

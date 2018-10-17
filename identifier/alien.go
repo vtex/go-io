@@ -30,6 +30,10 @@ func (id *Alien) Matches(other ID) bool {
 	return id.compare(other) == 0
 }
 
+func (id *Alien) MatchesOpt(other ID, opt MatchOptions) bool {
+	return id.Matches(other)
+}
+
 func (id *Alien) LessThan(other ID) bool {
 	return id.compare(other) < 0
 }

@@ -1,9 +1,14 @@
 package identifier
 
+type MatchOptions struct {
+	IgnorePrerelease bool
+}
+
 // Base interface for all types of identifiers.
 type ID interface {
 	String() string
 	Matches(other ID) bool
+	MatchesOpt(other ID, opts MatchOptions) bool
 	LessThan(other ID) bool
 
 	compare(other ID) int
