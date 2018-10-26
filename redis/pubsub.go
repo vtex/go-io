@@ -93,6 +93,23 @@ func (r *redisPubSub) Publish(key string, data []byte) error {
 }
 
 func (r *redisPubSub) mainLoop() {
+	msgChan := r.subscriptionReceiveChan()
+	pingTicker := time.NewTicker(pingDelay)
+	for {
+		select {
+		case <-pingTicker.C:
+			err := r.subscriptionConn.Ping("")
+			if err != nil {
+				logError(err, "pubsub_ping_error", r.keyNamespace, "", "Redis error pinging pub/sub connection")
+				r.recoverPubSubConn()
+			}
+		case msg := <-msgChan:
+			r.send(msg.Pattern, msg.Data)
+		}
+	}
+}
+
+func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.PMessage {
 	msgChan := make(chan redis.PMessage, 10)
 	go func() {
 		for {
@@ -106,16 +123,7 @@ func (r *redisPubSub) mainLoop() {
 			}
 		}
 	}()
-
-	pingTicker := time.NewTicker(pingDelay)
-	for {
-		select {
-		case <-pingTicker.C:
-			r.subscriptionConn.Ping("")
-		case msg := <-msgChan:
-			r.send(msg.Pattern, msg.Data)
-		}
-	}
+	return msgChan
 }
 
 func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
