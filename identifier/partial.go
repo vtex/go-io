@@ -11,7 +11,7 @@ type Partial struct {
 }
 
 // Assert Partial implements ID interface.
-var _ ID = (*Range)(nil)
+var _ ID = (*Partial)(nil)
 
 func NewPartial(vendor, name string) *Partial {
 	return &Partial{

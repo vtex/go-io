@@ -2,6 +2,8 @@ package identifier
 
 import (
 	"bytes"
+
+	"github.com/Masterminds/semver"
 )
 
 func Join(ids []Composed, separator string) string {
@@ -17,4 +19,10 @@ func Join(ids []Composed, separator string) string {
 	}
 
 	return buffer.String()
+}
+
+func StripPrerelease(v *semver.Version) *semver.Version {
+	// This will never fail as the only error would be a bad Prerelease.
+	copy, _ := v.SetPrerelease("")
+	return &copy
 }

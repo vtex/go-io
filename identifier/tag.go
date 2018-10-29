@@ -29,6 +29,10 @@ func (id *Tag) Matches(other ID) bool {
 	return id.compare(other) == 0
 }
 
+func (id *Tag) MatchesOpt(other ID, opt MatchOptions) bool {
+	return id.Matches(other)
+}
+
 func (id *Tag) LessThan(other ID) bool {
 	return id.compare(other) < 0
 }

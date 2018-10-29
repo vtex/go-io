@@ -1,5 +1,9 @@
 package identifier
 
+type MatchOptions struct {
+	IgnorePrerelease bool
+}
+
 // Base interface for all types of identifiers.
 type ID interface {
 	String() string
@@ -26,4 +30,5 @@ type Qualified interface {
 	Vendor() string
 	Name() string
 	ToPartial() *Partial
+	MatchesOpt(other ID, opts MatchOptions) bool
 }

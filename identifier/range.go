@@ -40,8 +40,8 @@ func (id *Range) Matches(other ID) bool {
 	return id.compare(other) == 0
 }
 
-func (id *Range) MatchesOpt(other ID, ignorePrerelease bool) bool {
-	return id.compareOpt(other, ignorePrerelease) == 0
+func (id *Range) MatchesOpt(other ID, opt MatchOptions) bool {
+	return id.compareOpt(other, opt) == 0
 }
 
 func (id *Range) LessThan(other ID) bool {
@@ -49,10 +49,10 @@ func (id *Range) LessThan(other ID) bool {
 }
 
 func (id *Range) compare(other ID) int {
-	return id.compareOpt(other, false)
+	return id.compareOpt(other, MatchOptions{})
 }
 
-func (id *Range) compareOpt(other ID, ignorePrerelease bool) int {
+func (id *Range) compareOpt(other ID, opt MatchOptions) int {
 	switch other := other.(type) {
 	case *Range:
 		return strings.Compare(id.raw, other.raw)
@@ -63,10 +63,8 @@ func (id *Range) compareOpt(other ID, ignorePrerelease bool) int {
 		}
 
 		version := other.Version
-		if ignorePrerelease {
-			// This will never fail as the only error would be a bad Prerelease.
-			copy, _ := version.SetPrerelease("")
-			version = &copy
+		if opt.IgnorePrerelease {
+			version = StripPrerelease(version)
 		}
 		if id.Range.Check(version) {
 			return 0

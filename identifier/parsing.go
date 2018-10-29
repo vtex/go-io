@@ -106,10 +106,22 @@ func ParseComposed(id string) (Composed, error) {
 		return nil, nil
 	} else if parsedID, err := ParseIdentifier(id); err != nil {
 		return nil, err
-	} else if composedID, isVersion := parsedID.(Composed); !isVersion {
-		return nil, errors.New("Parsed identifier is not version")
+	} else if composedID, isComposed := parsedID.(Composed); !isComposed {
+		return nil, errors.New("Parsed identifier is not composed")
 	} else {
 		return composedID, nil
+	}
+}
+
+func ParseQualified(id string) (Qualified, error) {
+	if id == "" {
+		return nil, nil
+	} else if parsedID, err := ParseIdentifier(id); err != nil {
+		return nil, err
+	} else if qualifiedID, isQualified := parsedID.(Qualified); !isQualified {
+		return nil, errors.New("Parsed identifier is not qualified")
+	} else {
+		return qualifiedID, nil
 	}
 }
 
