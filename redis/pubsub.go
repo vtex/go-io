@@ -35,8 +35,41 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 }
 
 type subscription struct {
+	mu       sync.RWMutex
 	patterns []string
-	sendCh   chan []byte
+	sendCh   chan<- []byte
+	done     chan struct{}
+}
+
+func newSubscription(patterns []string) (*subscription, <-chan []byte) {
+	subChan := make(chan []byte, 1)
+	sub := &subscription{
+		patterns: patterns,
+		sendCh:   subChan,
+		done:     make(chan struct{}),
+	}
+	return sub, subChan
+}
+
+func (s *subscription) Send(data []byte) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	select {
+	case s.sendCh <- data:
+		return true
+	case <-s.done:
+		return false
+	}
+}
+
+func (s *subscription) Close() {
+	close(s.done)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	close(s.sendCh)
 }
 
 type redisPubSub struct {
@@ -70,7 +103,10 @@ func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 }
 
 func (r *redisPubSub) PUnsubscribe(sub SubChan) error {
-	unusedPatterns := r.deactivate(sub)
+	unusedPatterns, err := r.deactivate(sub)
+	if err != nil {
+		return err
+	}
 
 	if len(unusedPatterns) > 0 {
 		if err := r.subscriptionConn.PUnsubscribe(unusedPatterns...); err != nil {
@@ -130,11 +166,7 @@ func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
 	r.subsLock.Lock()
 	defer r.subsLock.Unlock()
 
-	sub := &subscription{
-		patterns: patterns,
-		sendCh:   make(chan []byte, 1),
-	}
-	recvCh := SubChan(sub.sendCh)
+	sub, recvCh := newSubscription(patterns)
 	r.subsByChan[recvCh] = sub
 
 	newPatterns := []interface{}{}
@@ -151,16 +183,17 @@ func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
 	return recvCh, newPatterns
 }
 
-func (r *redisPubSub) deactivate(subChan SubChan) []interface{} {
+func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
+	sub := r.getSubByChan(subChan)
+	if sub == nil {
+		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", subChan)
+	}
+	sub.Close()
+
 	r.subsLock.Lock()
 	defer r.subsLock.Unlock()
 
-	sub, ok := r.subsByChan[subChan]
-	if !ok {
-		return nil
-	}
 	delete(r.subsByChan, subChan)
-	close(sub.sendCh)
 
 	unusedPatterns := []interface{}{}
 	for _, p := range sub.patterns {
@@ -173,7 +206,14 @@ func (r *redisPubSub) deactivate(subChan SubChan) []interface{} {
 		}
 	}
 
-	return unusedPatterns
+	return unusedPatterns, nil
+}
+
+func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
+	r.subsLock.RLock()
+	sub := r.subsByChan[subChan]
+	r.subsLock.RUnlock()
+	return sub
 }
 
 // Retries to reset pub/sub connection until no error occurrs
@@ -237,12 +277,16 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 				Error("Error executing redis pub/sub callback")
 		}
 	}()
-	r.subsLock.RLock()
-	defer r.subsLock.RUnlock()
 
-	if cs, ok := r.subsByPattern[pattern]; ok {
-		for sub := range cs {
-			sub.sendCh <- data
-		}
+	subs := r.getSubsByPattern(pattern)
+	for sub := range subs {
+		sub.Send(data)
 	}
+}
+
+func (r *redisPubSub) getSubsByPattern(pattern string) map[*subscription]bool {
+	r.subsLock.RLock()
+	sub := r.subsByPattern[pattern]
+	r.subsLock.RUnlock()
+	return sub
 }
