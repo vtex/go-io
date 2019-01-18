@@ -24,7 +24,7 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	pubsub := &redisPubSub{
 		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},
 		subsByChan:    map[SubChan]*subscription{},
-		subsByPattern: map[string]map[*subscription]bool{},
+		subsByPattern: map[string][]*subscription{},
 	}
 	if err := pubsub.resetPubSubConn(); err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ type redisPubSub struct {
 	// need iterating through all subscriptions.
 	subsLock      sync.RWMutex
 	subsByChan    map[SubChan]*subscription
-	subsByPattern map[string]map[*subscription]bool
+	subsByPattern map[string][]*subscription
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
@@ -171,13 +171,13 @@ func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
 
 	newPatterns := []interface{}{}
 	for _, p := range patterns {
-		cs, ok := r.subsByPattern[p]
-		if !ok {
-			cs = map[*subscription]bool{}
-			r.subsByPattern[p] = cs
+		subsToPattern := r.subsByPattern[p]
+		if len(subsToPattern) == 0 {
 			newPatterns = append(newPatterns, p)
 		}
-		cs[sub] = true
+		subsToPattern = append(subsToPattern, sub)
+
+		r.subsByPattern[p] = subsToPattern
 	}
 
 	return recvCh, newPatterns
@@ -197,16 +197,27 @@ func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
 
 	unusedPatterns := []interface{}{}
 	for _, p := range sub.patterns {
-		cs := r.subsByPattern[p]
+		subsToPattern := r.subsByPattern[p]
 
-		delete(cs, sub)
-		if len(cs) == 0 {
+		subsToPattern = removeSub(subsToPattern, sub)
+		if len(subsToPattern) > 0 {
+			r.subsByPattern[p] = subsToPattern
+		} else {
 			delete(r.subsByPattern, p)
 			unusedPatterns = append(unusedPatterns, p)
 		}
 	}
 
 	return unusedPatterns, nil
+}
+
+func removeSub(subs []*subscription, sub *subscription) []*subscription {
+	for i, elm := range subs {
+		if elm == sub {
+			return append(subs[:i], subs[i+1:]...)
+		}
+	}
+	return subs
 }
 
 func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
@@ -279,12 +290,12 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 	}()
 
 	subs := r.getSubsByPattern(pattern)
-	for sub := range subs {
+	for _, sub := range subs {
 		sub.Send(data)
 	}
 }
 
-func (r *redisPubSub) getSubsByPattern(pattern string) map[*subscription]bool {
+func (r *redisPubSub) getSubsByPattern(pattern string) []*subscription {
 	r.subsLock.RLock()
 	sub := r.subsByPattern[pattern]
 	r.subsLock.RUnlock()
