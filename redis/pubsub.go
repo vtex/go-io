@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
 )
 
@@ -107,12 +107,12 @@ func (r *redisPubSub) mainLoop() {
 	}
 }
 
-func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.PMessage {
-	msgChan := make(chan redis.PMessage, 10)
+func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.Message {
+	msgChan := make(chan redis.Message, 10)
 	go func() {
 		for {
 			switch v := r.subscriptionConn.Receive().(type) {
-			case redis.PMessage:
+			case redis.Message:
 				msgChan <- v
 
 			case error:
