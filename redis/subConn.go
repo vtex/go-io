@@ -8,6 +8,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const pongTimeout = 5 * time.Second
+
 type subConn struct {
 	pool       *redis.Pool
 	outputChan chan redis.Message
@@ -30,7 +32,7 @@ func newSubConn(endpoint string) (*subConn, error) {
 		subscribedPatterns: map[interface{}]bool{},
 	}
 
-	if err := subConn.resetPubSubConn(); err != nil {
+	if err := subConn.resetConn(); err != nil {
 		return nil, err
 	}
 	go subConn.mainLoop()
@@ -75,47 +77,59 @@ func (c *subConn) ReceiveChan() <-chan redis.Message {
 }
 
 func (c *subConn) mainLoop() {
-	msgChan := c.subscriptionReceiveChan()
-	pingTicker := time.NewTicker(pingDelay)
+	var (
+		pingTicker      = time.NewTicker(pingDelay)
+		pongTimeoutChan <-chan time.Time
+
+		done    = make(chan struct{})
+		msgChan = connReceiveChan(c.currConn, done)
+	)
+	recover := func() {
+		close(done)
+
+		c.recoverConn()
+		done = make(chan struct{})
+		msgChan = connReceiveChan(c.currConn, done)
+	}
 	for {
 		select {
 		case <-pingTicker.C:
 			err := c.currConn.Ping("")
-			if err != nil {
+			if err == nil {
+				pongTimeoutChan = time.Tick(pongTimeout)
+			} else {
 				logError(err, "pubsub_ping_error", "", "", "Redis error pinging pub/sub connection")
-				c.recoverPubSubConn()
+				recover()
 			}
+
+		case <-pongTimeoutChan:
+			pongTimeoutChan = nil
+			recover()
+
 		case msg := <-msgChan:
-			c.outputChan <- msg
+			switch v := msg.(type) {
+			case redis.Message:
+				c.outputChan <- v
+
+			case redis.Pong:
+				pongTimeoutChan = nil
+
+			case error:
+				logError(v, "pubsub_error", "", "", "Redis pub/sub error")
+				recover()
+			}
 		}
 	}
 }
 
-func (c *subConn) subscriptionReceiveChan() <-chan redis.Message {
-	msgChan := make(chan redis.Message, 10)
-	go func() {
-		for {
-			switch v := c.currConn.Receive().(type) {
-			case redis.Message:
-				msgChan <- v
-
-			case error:
-				logError(v, "pubsub_error", "", "", "Redis pub/sub error")
-				c.recoverPubSubConn()
-			}
-		}
-	}()
-	return msgChan
-}
-
 // Retries to reset pub/sub connection until no error occurrs
-func (c *subConn) recoverPubSubConn() {
+func (c *subConn) recoverConn() {
 	if err := c.currConn.Conn.Err(); err != nil {
 		logError(err, "redis_conn_error", "", "", "Redis connection error")
 	}
 
 	for {
-		err := c.resetPubSubConn()
+		err := c.resetConn()
 		if err == nil {
 			break
 		}
@@ -124,7 +138,7 @@ func (c *subConn) recoverPubSubConn() {
 	}
 }
 
-func (c *subConn) resetPubSubConn() error {
+func (c *subConn) resetConn() error {
 	psc := &redis.PubSubConn{Conn: c.pool.Get()}
 
 	// In order to always have a Redis connection in the PUB/SUB state (which
@@ -156,4 +170,21 @@ func (c *subConn) resetPubSubConn() error {
 		prevConn.Close()
 	}
 	return nil
+}
+
+func connReceiveChan(conn *redis.PubSubConn, done <-chan struct{}) <-chan interface{} {
+	msgChan := make(chan interface{}, 10)
+	go func() {
+		for {
+			if conn.Conn.Err() != nil {
+				return
+			}
+			select {
+			case msgChan <- conn.Receive():
+			case <-done:
+				return
+			}
+		}
+	}()
+	return msgChan
 }
