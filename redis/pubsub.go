@@ -193,9 +193,6 @@ func (r *redisPubSub) recoverPubSubConn() {
 }
 
 func (r *redisPubSub) resetPubSubConn() error {
-	r.subsLock.RLock()
-	defer r.subsLock.RUnlock()
-
 	psc := &redis.PubSubConn{Conn: r.pool.Get()}
 
 	// In order to always have a Redis connection in the PUB/SUB state (which
@@ -205,6 +202,9 @@ func (r *redisPubSub) resetPubSubConn() error {
 	if _, err := psc.Conn.Do("SUBSCRIBE", "_dummy_"); err != nil {
 		return errors.Wrap(err, "Failed to subscribe to test channel")
 	}
+
+	r.subsLock.RLock()
+	defer r.subsLock.RUnlock()
 
 	if len(r.subsByPattern) > 0 {
 		patterns := make([]interface{}, 0, len(r.subsByPattern))
