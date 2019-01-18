@@ -9,6 +9,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const pingDelay = 60 * time.Second
+
 type SubChan <-chan []byte
 
 type PubSub interface {
@@ -19,12 +21,17 @@ type PubSub interface {
 }
 
 func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
-	pool := newRedisPool(endpoint, 50, 100)
+	subsPool := newRedisPool(endpoint, poolOptions{
+		MaxActive:      3,
+		MaxIdle:        1,
+		SetReadTimeout: false,
+	})
 
 	pubsub := &redisPubSub{
-		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},
-		subsByChan:    map[SubChan]*subscription{},
-		subsByPattern: map[string][]*subscription{},
+		redisC:           New(endpoint, keyNamespace).(*redisC),
+		subscriptionPool: subsPool,
+		subsByChan:       map[SubChan]*subscription{},
+		subsByPattern:    map[string][]*subscription{},
 	}
 	if err := pubsub.resetPubSubConn(); err != nil {
 		return nil, err
@@ -37,6 +44,7 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 type redisPubSub struct {
 	*redisC
 
+	subscriptionPool *redis.Pool
 	subscriptionConn *redis.PubSubConn
 
 	// Both maps hold the same subscriptions, the only difference is that in
@@ -206,7 +214,7 @@ func (r *redisPubSub) recoverPubSubConn() {
 }
 
 func (r *redisPubSub) resetPubSubConn() error {
-	psc := &redis.PubSubConn{Conn: r.pool.Get()}
+	psc := &redis.PubSubConn{Conn: r.subscriptionPool.Get()}
 
 	// In order to always have a Redis connection in the PUB/SUB state (which
 	// changes the PING behavior for example), subscribe to a dummy channel that

@@ -10,8 +10,6 @@ import (
 	"github.com/vtex/go-io/util"
 )
 
-const pingDelay = 60 * time.Second
-
 type SetOptions struct {
 	ExpireIn   time.Duration
 	IfNotExist bool
@@ -25,27 +23,12 @@ type Cache interface {
 	Del(key string) error
 }
 
-func newRedisPool(endpoint string, maxIdle, maxActive int) *redis.Pool {
-	return &redis.Pool{
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", endpoint, redis.DialConnectTimeout(1*time.Second))
-		},
-		TestOnBorrow: func(conn redis.Conn, idleSince time.Time) error {
-			if time.Since(idleSince) < pingDelay {
-				return nil
-			}
-			_, err := conn.Do("PING")
-			return err
-		},
-		MaxIdle:     maxIdle,
-		MaxActive:   maxActive,
-		Wait:        true,
-		IdleTimeout: 3 * time.Minute,
-	}
-}
-
 func New(endpoint, keyNamespace string) Cache {
-	pool := newRedisPool(endpoint, 50, 100)
+	pool := newRedisPool(endpoint, poolOptions{
+		MaxIdle:        50,
+		MaxActive:      100,
+		SetReadTimeout: true,
+	})
 	return &redisC{pool: pool, keyNamespace: keyNamespace}
 }
 
