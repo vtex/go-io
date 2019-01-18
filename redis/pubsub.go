@@ -200,6 +200,7 @@ func (r *redisPubSub) resetPubSubConn() error {
 	// is never unsubscribed nor has anything published to it. Call Do directly
 	// in the connection to wait for the successful response from Redis as well.
 	if _, err := psc.Conn.Do("SUBSCRIBE", "_dummy_"); err != nil {
+		psc.Close()
 		return errors.Wrap(err, "Failed to subscribe to test channel")
 	}
 
