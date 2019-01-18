@@ -42,13 +42,13 @@ type subscription struct {
 type redisPubSub struct {
 	*redisC
 
-	lock             sync.RWMutex
 	subscriptionConn *redis.PubSubConn
 
 	// Both maps hold the same subscriptions, the only difference is that in
 	// subsByPattern they are indexed by subscription pattern so that receiving
 	// from a Redis channel and forwarding to applicable subscriptions doesn't
 	// need iterating through all subscriptions.
+	subsLock      sync.RWMutex
 	subsByChan    map[SubChan]*subscription
 	subsByPattern map[string]map[*subscription]bool
 }
@@ -127,8 +127,8 @@ func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.PMessage {
 }
 
 func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.subsLock.Lock()
+	defer r.subsLock.Unlock()
 
 	sub := &subscription{
 		patterns: patterns,
@@ -152,8 +152,8 @@ func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
 }
 
 func (r *redisPubSub) deactivate(subChan SubChan) []interface{} {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.subsLock.Lock()
+	defer r.subsLock.Unlock()
 
 	sub, ok := r.subsByChan[subChan]
 	if !ok {
@@ -193,8 +193,8 @@ func (r *redisPubSub) recoverPubSubConn() {
 }
 
 func (r *redisPubSub) resetPubSubConn() error {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.subsLock.RLock()
+	defer r.subsLock.RUnlock()
 
 	psc := &redis.PubSubConn{Conn: r.pool.Get()}
 
@@ -236,8 +236,8 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 				Error("Error executing redis pub/sub callback")
 		}
 	}()
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.subsLock.RLock()
+	defer r.subsLock.RUnlock()
 
 	if cs, ok := r.subsByPattern[pattern]; ok {
 		for sub := range cs {
