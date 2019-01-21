@@ -11,10 +11,10 @@ import (
 const pongTimeout = 5 * time.Second
 
 type subConn struct {
+	mu         sync.Mutex
 	pool       *redis.Pool
 	outputChan chan redis.Message
 
-	mu                 sync.RWMutex
 	subscribedPatterns map[interface{}]bool
 
 	currConn *redis.PubSubConn
@@ -150,8 +150,8 @@ func (c *subConn) resetConn() error {
 		return errors.Wrap(err, "Failed to subscribe to test channel")
 	}
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	if len(c.subscribedPatterns) > 0 {
 		patterns := make([]interface{}, 0, len(c.subscribedPatterns))
