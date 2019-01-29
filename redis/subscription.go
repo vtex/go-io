@@ -1,6 +1,11 @@
 package redis
 
-import "sync"
+import (
+	"strings"
+	"sync"
+
+	"github.com/Sirupsen/logrus"
+)
 
 type subscription struct {
 	mu       sync.RWMutex
@@ -10,7 +15,7 @@ type subscription struct {
 }
 
 func newSubscription(patterns []string) (*subscription, <-chan []byte) {
-	subChan := make(chan []byte, 1)
+	subChan := make(chan []byte, 10)
 	sub := &subscription{
 		patterns: patterns,
 		sendCh:   subChan,
@@ -27,6 +32,13 @@ func (s *subscription) Send(data []byte) bool {
 	case s.sendCh <- data:
 		return true
 	case <-s.done:
+		return false
+	default:
+		logrus.
+			WithField("code", "pubsub_buffer_full").
+			WithField("data", string(data)).
+			WithField("patterns", strings.Join(s.patterns, "; ")).
+			Error("Dropping message due to Redis client buffer full")
 		return false
 	}
 }
