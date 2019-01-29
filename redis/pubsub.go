@@ -24,7 +24,7 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	pubsub := &redisPubSub{
 		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},
 		subsByChan:    map[SubChan]*subscription{},
-		subsByPattern: map[string]map[*subscription]bool{},
+		subsByPattern: map[string][]*subscription{},
 	}
 	if err := pubsub.resetPubSubConn(); err != nil {
 		return nil, err
@@ -34,23 +34,18 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	return pubsub, nil
 }
 
-type subscription struct {
-	patterns []string
-	sendCh   chan []byte
-}
-
 type redisPubSub struct {
 	*redisC
 
-	lock             sync.RWMutex
 	subscriptionConn *redis.PubSubConn
 
 	// Both maps hold the same subscriptions, the only difference is that in
 	// subsByPattern they are indexed by subscription pattern so that receiving
 	// from a Redis channel and forwarding to applicable subscriptions doesn't
 	// need iterating through all subscriptions.
+	subsLock      sync.RWMutex
 	subsByChan    map[SubChan]*subscription
-	subsByPattern map[string]map[*subscription]bool
+	subsByPattern map[string][]*subscription
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
@@ -70,7 +65,10 @@ func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 }
 
 func (r *redisPubSub) PUnsubscribe(sub SubChan) error {
-	unusedPatterns := r.deactivate(sub)
+	unusedPatterns, err := r.deactivate(sub)
+	if err != nil {
+		return err
+	}
 
 	if len(unusedPatterns) > 0 {
 		if err := r.subscriptionConn.PUnsubscribe(unusedPatterns...); err != nil {
@@ -127,53 +125,68 @@ func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.PMessage {
 }
 
 func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.subsLock.Lock()
+	defer r.subsLock.Unlock()
 
-	sub := &subscription{
-		patterns: patterns,
-		sendCh:   make(chan []byte, 1),
-	}
-	recvCh := SubChan(sub.sendCh)
+	sub, recvCh := newSubscription(patterns)
 	r.subsByChan[recvCh] = sub
 
 	newPatterns := []interface{}{}
 	for _, p := range patterns {
-		cs, ok := r.subsByPattern[p]
-		if !ok {
-			cs = map[*subscription]bool{}
-			r.subsByPattern[p] = cs
+		subsToPattern := r.subsByPattern[p]
+		if len(subsToPattern) == 0 {
 			newPatterns = append(newPatterns, p)
 		}
-		cs[sub] = true
+		subsToPattern = append(subsToPattern, sub)
+
+		r.subsByPattern[p] = subsToPattern
 	}
 
 	return recvCh, newPatterns
 }
 
-func (r *redisPubSub) deactivate(subChan SubChan) []interface{} {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	sub, ok := r.subsByChan[subChan]
-	if !ok {
-		return nil
+func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
+	sub := r.getSubByChan(subChan)
+	if sub == nil {
+		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", subChan)
 	}
+	sub.Close()
+
+	r.subsLock.Lock()
+	defer r.subsLock.Unlock()
+
 	delete(r.subsByChan, subChan)
-	close(sub.sendCh)
 
 	unusedPatterns := []interface{}{}
 	for _, p := range sub.patterns {
-		cs := r.subsByPattern[p]
+		subsToPattern := r.subsByPattern[p]
 
-		delete(cs, sub)
-		if len(cs) == 0 {
+		subsToPattern = removeSub(subsToPattern, sub)
+		if len(subsToPattern) > 0 {
+			r.subsByPattern[p] = subsToPattern
+		} else {
 			delete(r.subsByPattern, p)
 			unusedPatterns = append(unusedPatterns, p)
 		}
 	}
 
-	return unusedPatterns
+	return unusedPatterns, nil
+}
+
+func removeSub(subs []*subscription, sub *subscription) []*subscription {
+	for i, elm := range subs {
+		if elm == sub {
+			return append(subs[:i], subs[i+1:]...)
+		}
+	}
+	return subs
+}
+
+func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
+	r.subsLock.RLock()
+	sub := r.subsByChan[subChan]
+	r.subsLock.RUnlock()
+	return sub
 }
 
 // Retries to reset pub/sub connection until no error occurrs
@@ -193,9 +206,6 @@ func (r *redisPubSub) recoverPubSubConn() {
 }
 
 func (r *redisPubSub) resetPubSubConn() error {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	psc := &redis.PubSubConn{Conn: r.pool.Get()}
 
 	// In order to always have a Redis connection in the PUB/SUB state (which
@@ -203,8 +213,12 @@ func (r *redisPubSub) resetPubSubConn() error {
 	// is never unsubscribed nor has anything published to it. Call Do directly
 	// in the connection to wait for the successful response from Redis as well.
 	if _, err := psc.Conn.Do("SUBSCRIBE", "_dummy_"); err != nil {
+		psc.Close()
 		return errors.Wrap(err, "Failed to subscribe to test channel")
 	}
+
+	r.subsLock.RLock()
+	defer r.subsLock.RUnlock()
 
 	if len(r.subsByPattern) > 0 {
 		patterns := make([]interface{}, 0, len(r.subsByPattern))
@@ -236,12 +250,16 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 				Error("Error executing redis pub/sub callback")
 		}
 	}()
-	r.lock.RLock()
-	defer r.lock.RUnlock()
 
-	if cs, ok := r.subsByPattern[pattern]; ok {
-		for sub := range cs {
-			sub.sendCh <- data
-		}
+	subs := r.getSubsByPattern(pattern)
+	for _, sub := range subs {
+		sub.Send(data)
 	}
+}
+
+func (r *redisPubSub) getSubsByPattern(pattern string) []*subscription {
+	r.subsLock.RLock()
+	sub := r.subsByPattern[pattern]
+	r.subsLock.RUnlock()
+	return sub
 }
