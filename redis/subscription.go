@@ -7,16 +7,16 @@ import (
 	"github.com/Sirupsen/logrus"
 )
 
-type subscription struct {
+type pubsubClient struct {
 	mu       sync.RWMutex
 	patterns []string
 	sendCh   chan<- []byte
 	done     chan struct{}
 }
 
-func newSubscription(patterns []string) (*subscription, <-chan []byte) {
+func newPubSubClient(patterns []string) (*pubsubClient, <-chan []byte) {
 	subChan := make(chan []byte, 10)
-	sub := &subscription{
+	sub := &pubsubClient{
 		patterns: patterns,
 		sendCh:   subChan,
 		done:     make(chan struct{}),
@@ -24,41 +24,41 @@ func newSubscription(patterns []string) (*subscription, <-chan []byte) {
 	return sub, subChan
 }
 
-func (s *subscription) Send(data []byte) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (c *pubsubClient) Send(data []byte) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	if s.isClosed() {
+	if c.isClosed() {
 		return false
 	}
 
 	select {
-	case s.sendCh <- data:
+	case c.sendCh <- data:
 		return true
-	case <-s.done:
+	case <-c.done:
 		return false
 	default:
 		logrus.
 			WithField("code", "pubsub_buffer_full").
 			WithField("data", string(data)).
-			WithField("patterns", strings.Join(s.patterns, "; ")).
+			WithField("patterns", strings.Join(c.patterns, "; ")).
 			Error("Dropping message due to Redis client buffer full")
 		return false
 	}
 }
 
-func (s *subscription) Close() {
-	close(s.done)
+func (c *pubsubClient) Close() {
+	close(c.done)
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	close(s.sendCh)
+	close(c.sendCh)
 }
 
-func (s *subscription) isClosed() bool {
+func (c *pubsubClient) isClosed() bool {
 	select {
-	case <-s.done:
+	case <-c.done:
 		return true
 	default:
 		return false

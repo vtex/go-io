@@ -28,8 +28,8 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	pubsub := &redisPubSub{
 		redisC:           New(endpoint, keyNamespace).(*redisC),
 		subscriptionConn: subConn,
-		subsByChan:       map[SubChan]*subscription{},
-		subsByPattern:    map[string][]*subscription{},
+		clientsByChan:    map[SubChan]*pubsubClient{},
+		clientsByPattern: map[string][]*pubsubClient{},
 	}
 	go pubsub.mainLoop()
 
@@ -45,9 +45,9 @@ type redisPubSub struct {
 	// subsByPattern they are indexed by subscription pattern so that receiving
 	// from a Redis channel and forwarding to applicable subscriptions doesn't
 	// need iterating through all subscriptions.
-	subsLock      sync.RWMutex
-	subsByChan    map[SubChan]*subscription
-	subsByPattern map[string][]*subscription
+	clientsLock      sync.RWMutex
+	clientsByChan    map[SubChan]*pubsubClient
+	clientsByPattern map[string][]*pubsubClient
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
@@ -66,8 +66,8 @@ func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 	return recvCh, nil
 }
 
-func (r *redisPubSub) PUnsubscribe(sub SubChan) error {
-	unusedPatterns, err := r.deactivate(sub)
+func (r *redisPubSub) PUnsubscribe(recvCh SubChan) error {
+	unusedPatterns, err := r.deactivate(recvCh)
 	if err != nil {
 		return err
 	}
@@ -110,56 +110,56 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 		}
 	}()
 
-	r.subsLock.RLock()
-	defer r.subsLock.RUnlock()
+	r.clientsLock.RLock()
+	defer r.clientsLock.RUnlock()
 
-	for _, sub := range r.subsByPattern[pattern] {
-		sub.Send(data)
+	for _, cl := range r.clientsByPattern[pattern] {
+		cl.Send(data)
 	}
 }
 
 func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
-	r.subsLock.Lock()
-	defer r.subsLock.Unlock()
+	r.clientsLock.Lock()
+	defer r.clientsLock.Unlock()
 
-	sub, recvCh := newSubscription(patterns)
-	r.subsByChan[recvCh] = sub
+	cl, recvCh := newPubSubClient(patterns)
+	r.clientsByChan[recvCh] = cl
 
 	newPatterns := []interface{}{}
 	for _, p := range patterns {
-		subsToPattern := r.subsByPattern[p]
-		if len(subsToPattern) == 0 {
+		patternClients := r.clientsByPattern[p]
+		if len(patternClients) == 0 {
 			newPatterns = append(newPatterns, p)
 		}
-		subsToPattern = append(subsToPattern, sub)
+		patternClients = append(patternClients, cl)
 
-		r.subsByPattern[p] = subsToPattern
+		r.clientsByPattern[p] = patternClients
 	}
 
 	return recvCh, newPatterns
 }
 
-func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
-	sub := r.getSubByChan(subChan)
-	if sub == nil {
-		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", subChan)
+func (r *redisPubSub) deactivate(recvCh SubChan) ([]interface{}, error) {
+	cl := r.clientByChan(recvCh)
+	if cl == nil {
+		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", recvCh)
 	}
-	sub.Close()
+	cl.Close()
 
-	r.subsLock.Lock()
-	defer r.subsLock.Unlock()
+	r.clientsLock.Lock()
+	defer r.clientsLock.Unlock()
 
-	delete(r.subsByChan, subChan)
+	delete(r.clientsByChan, recvCh)
 
 	unusedPatterns := []interface{}{}
-	for _, p := range sub.patterns {
-		subsToPattern := r.subsByPattern[p]
+	for _, p := range cl.patterns {
+		patternClients := r.clientsByPattern[p]
 
-		subsToPattern = removeSub(subsToPattern, sub)
-		if len(subsToPattern) > 0 {
-			r.subsByPattern[p] = subsToPattern
+		patternClients = removeClient(patternClients, cl)
+		if len(patternClients) > 0 {
+			r.clientsByPattern[p] = patternClients
 		} else {
-			delete(r.subsByPattern, p)
+			delete(r.clientsByPattern, p)
 			unusedPatterns = append(unusedPatterns, p)
 		}
 	}
@@ -167,18 +167,18 @@ func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
 	return unusedPatterns, nil
 }
 
-func removeSub(subs []*subscription, sub *subscription) []*subscription {
-	for i, elm := range subs {
-		if elm == sub {
-			return append(subs[:i], subs[i+1:]...)
+func removeClient(clients []*pubsubClient, cl *pubsubClient) []*pubsubClient {
+	for i, elm := range clients {
+		if elm == cl {
+			return append(clients[:i], clients[i+1:]...)
 		}
 	}
-	return subs
+	return clients
 }
 
-func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
-	r.subsLock.RLock()
-	sub := r.subsByChan[subChan]
-	r.subsLock.RUnlock()
-	return sub
+func (r *redisPubSub) clientByChan(subChan SubChan) *pubsubClient {
+	r.clientsLock.RLock()
+	cl := r.clientsByChan[subChan]
+	r.clientsLock.RUnlock()
+	return cl
 }
