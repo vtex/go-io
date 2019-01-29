@@ -110,8 +110,10 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 		}
 	}()
 
-	subs := r.getSubsByPattern(pattern)
-	for _, sub := range subs {
+	r.subsLock.RLock()
+	defer r.subsLock.RUnlock()
+
+	for _, sub := range r.subsByPattern[pattern] {
 		sub.Send(data)
 	}
 }
@@ -177,13 +179,6 @@ func removeSub(subs []*subscription, sub *subscription) []*subscription {
 func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
 	r.subsLock.RLock()
 	sub := r.subsByChan[subChan]
-	r.subsLock.RUnlock()
-	return sub
-}
-
-func (r *redisPubSub) getSubsByPattern(pattern string) []*subscription {
-	r.subsLock.RLock()
-	sub := r.subsByPattern[pattern]
 	r.subsLock.RUnlock()
 	return sub
 }
