@@ -5,9 +5,10 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/garyburd/redigo/redis"
 	"github.com/pkg/errors"
 )
+
+const pingDelay = 60 * time.Second
 
 type SubChan <-chan []byte
 
@@ -19,15 +20,16 @@ type PubSub interface {
 }
 
 func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
-	pool := newRedisPool(endpoint, 50, 100)
+	subConn, err := newSubConn(endpoint)
+	if err != nil {
+		return nil, err
+	}
 
 	pubsub := &redisPubSub{
-		redisC:        &redisC{pool: pool, keyNamespace: keyNamespace},
-		subsByChan:    map[SubChan]*subscription{},
-		subsByPattern: map[string][]*subscription{},
-	}
-	if err := pubsub.resetPubSubConn(); err != nil {
-		return nil, err
+		redisC:           New(endpoint, keyNamespace).(*redisC),
+		subscriptionConn: subConn,
+		clientsByChan:    map[SubChan]*pubsubClient{},
+		clientsByPattern: map[string][]*pubsubClient{},
 	}
 	go pubsub.mainLoop()
 
@@ -37,15 +39,15 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 type redisPubSub struct {
 	*redisC
 
-	subscriptionConn *redis.PubSubConn
+	subscriptionConn *subConn
 
 	// Both maps hold the same subscriptions, the only difference is that in
 	// subsByPattern they are indexed by subscription pattern so that receiving
 	// from a Redis channel and forwarding to applicable subscriptions doesn't
 	// need iterating through all subscriptions.
-	subsLock      sync.RWMutex
-	subsByChan    map[SubChan]*subscription
-	subsByPattern map[string][]*subscription
+	clientsLock      sync.RWMutex
+	clientsByChan    map[SubChan]*pubsubClient
+	clientsByPattern map[string][]*pubsubClient
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
@@ -56,7 +58,7 @@ func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 
 	recvCh, newPatterns := r.startSub(patterns)
 	if len(newPatterns) > 0 {
-		if err := r.subscriptionConn.PSubscribe(newPatterns...); err != nil {
+		if err := r.subscriptionConn.PSubscribe(newPatterns); err != nil {
 			r.deactivate(recvCh)
 			return nil, errors.WithStack(err)
 		}
@@ -64,14 +66,14 @@ func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
 	return recvCh, nil
 }
 
-func (r *redisPubSub) PUnsubscribe(sub SubChan) error {
-	unusedPatterns, err := r.deactivate(sub)
+func (r *redisPubSub) PUnsubscribe(recvCh SubChan) error {
+	unusedPatterns, err := r.deactivate(recvCh)
 	if err != nil {
 		return err
 	}
 
 	if len(unusedPatterns) > 0 {
-		if err := r.subscriptionConn.PUnsubscribe(unusedPatterns...); err != nil {
+		if err := r.subscriptionConn.PUnsubscribe(unusedPatterns); err != nil {
 			return errors.WithStack(err)
 		}
 	}
@@ -91,152 +93,9 @@ func (r *redisPubSub) Publish(key string, data []byte) error {
 }
 
 func (r *redisPubSub) mainLoop() {
-	msgChan := r.subscriptionReceiveChan()
-	pingTicker := time.NewTicker(pingDelay)
-	for {
-		select {
-		case <-pingTicker.C:
-			err := r.subscriptionConn.Ping("")
-			if err != nil {
-				logError(err, "pubsub_ping_error", r.keyNamespace, "", "Redis error pinging pub/sub connection")
-				r.recoverPubSubConn()
-			}
-		case msg := <-msgChan:
-			r.send(msg.Pattern, msg.Data)
-		}
+	for msg := range r.subscriptionConn.ReceiveChan() {
+		r.send(msg.Pattern, msg.Data)
 	}
-}
-
-func (r *redisPubSub) subscriptionReceiveChan() <-chan redis.PMessage {
-	msgChan := make(chan redis.PMessage, 10)
-	go func() {
-		for {
-			switch v := r.subscriptionConn.Receive().(type) {
-			case redis.PMessage:
-				msgChan <- v
-
-			case error:
-				logError(v, "pubsub_error", r.keyNamespace, "", "Redis pub/sub error")
-				r.recoverPubSubConn()
-			}
-		}
-	}()
-	return msgChan
-}
-
-func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
-	r.subsLock.Lock()
-	defer r.subsLock.Unlock()
-
-	sub, recvCh := newSubscription(patterns)
-	r.subsByChan[recvCh] = sub
-
-	newPatterns := []interface{}{}
-	for _, p := range patterns {
-		subsToPattern := r.subsByPattern[p]
-		if len(subsToPattern) == 0 {
-			newPatterns = append(newPatterns, p)
-		}
-		subsToPattern = append(subsToPattern, sub)
-
-		r.subsByPattern[p] = subsToPattern
-	}
-
-	return recvCh, newPatterns
-}
-
-func (r *redisPubSub) deactivate(subChan SubChan) ([]interface{}, error) {
-	sub := r.getSubByChan(subChan)
-	if sub == nil {
-		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", subChan)
-	}
-	sub.Close()
-
-	r.subsLock.Lock()
-	defer r.subsLock.Unlock()
-
-	delete(r.subsByChan, subChan)
-
-	unusedPatterns := []interface{}{}
-	for _, p := range sub.patterns {
-		subsToPattern := r.subsByPattern[p]
-
-		subsToPattern = removeSub(subsToPattern, sub)
-		if len(subsToPattern) > 0 {
-			r.subsByPattern[p] = subsToPattern
-		} else {
-			delete(r.subsByPattern, p)
-			unusedPatterns = append(unusedPatterns, p)
-		}
-	}
-
-	return unusedPatterns, nil
-}
-
-func removeSub(subs []*subscription, sub *subscription) []*subscription {
-	for i, elm := range subs {
-		if elm == sub {
-			return append(subs[:i], subs[i+1:]...)
-		}
-	}
-	return subs
-}
-
-func (r *redisPubSub) getSubByChan(subChan SubChan) *subscription {
-	r.subsLock.RLock()
-	sub := r.subsByChan[subChan]
-	r.subsLock.RUnlock()
-	return sub
-}
-
-// Retries to reset pub/sub connection until no error occurrs
-func (r *redisPubSub) recoverPubSubConn() {
-	if err := r.subscriptionConn.Conn.Err(); err != nil {
-		logError(err, "redis_conn_error", r.keyNamespace, "", "Redis connection error")
-	}
-
-	for {
-		err := r.resetPubSubConn()
-		if err == nil {
-			break
-		}
-		logError(err, "redis_conn_reset_error", r.keyNamespace, "", "Error resetting Redis connection")
-		time.Sleep(1 * time.Second)
-	}
-}
-
-func (r *redisPubSub) resetPubSubConn() error {
-	psc := &redis.PubSubConn{Conn: r.pool.Get()}
-
-	// In order to always have a Redis connection in the PUB/SUB state (which
-	// changes the PING behavior for example), subscribe to a dummy channel that
-	// is never unsubscribed nor has anything published to it. Call Do directly
-	// in the connection to wait for the successful response from Redis as well.
-	if _, err := psc.Conn.Do("SUBSCRIBE", "_dummy_"); err != nil {
-		psc.Close()
-		return errors.Wrap(err, "Failed to subscribe to test channel")
-	}
-
-	r.subsLock.RLock()
-	defer r.subsLock.RUnlock()
-
-	if len(r.subsByPattern) > 0 {
-		patterns := make([]interface{}, 0, len(r.subsByPattern))
-		for p := range r.subsByPattern {
-			patterns = append(patterns, p)
-		}
-		if err := psc.PSubscribe(patterns...); err != nil {
-			psc.Close()
-			return errors.Wrapf(err, "Error re-subscribing to patterns %s", patterns)
-		}
-	}
-
-	prevConn := r.subscriptionConn
-	r.subscriptionConn = psc
-	if prevConn != nil {
-		prevConn.Close()
-	}
-	return nil
 }
 
 func (r *redisPubSub) send(pattern string, data []byte) {
@@ -251,15 +110,75 @@ func (r *redisPubSub) send(pattern string, data []byte) {
 		}
 	}()
 
-	subs := r.getSubsByPattern(pattern)
-	for _, sub := range subs {
-		sub.Send(data)
+	r.clientsLock.RLock()
+	defer r.clientsLock.RUnlock()
+
+	for _, cl := range r.clientsByPattern[pattern] {
+		cl.Send(data)
 	}
 }
 
-func (r *redisPubSub) getSubsByPattern(pattern string) []*subscription {
-	r.subsLock.RLock()
-	sub := r.subsByPattern[pattern]
-	r.subsLock.RUnlock()
-	return sub
+func (r *redisPubSub) startSub(patterns []string) (SubChan, []interface{}) {
+	r.clientsLock.Lock()
+	defer r.clientsLock.Unlock()
+
+	cl, recvCh := newPubSubClient(patterns)
+	r.clientsByChan[recvCh] = cl
+
+	newPatterns := []interface{}{}
+	for _, p := range patterns {
+		patternClients := r.clientsByPattern[p]
+		if len(patternClients) == 0 {
+			newPatterns = append(newPatterns, p)
+		}
+		patternClients = append(patternClients, cl)
+
+		r.clientsByPattern[p] = patternClients
+	}
+
+	return recvCh, newPatterns
+}
+
+func (r *redisPubSub) deactivate(recvCh SubChan) ([]interface{}, error) {
+	cl := r.clientByChan(recvCh)
+	if cl == nil {
+		return nil, errors.Errorf("Attempt to deactive unknown subscription: %v", recvCh)
+	}
+	cl.Close()
+
+	r.clientsLock.Lock()
+	defer r.clientsLock.Unlock()
+
+	delete(r.clientsByChan, recvCh)
+
+	unusedPatterns := []interface{}{}
+	for _, p := range cl.patterns {
+		patternClients := r.clientsByPattern[p]
+
+		patternClients = removeClient(patternClients, cl)
+		if len(patternClients) > 0 {
+			r.clientsByPattern[p] = patternClients
+		} else {
+			delete(r.clientsByPattern, p)
+			unusedPatterns = append(unusedPatterns, p)
+		}
+	}
+
+	return unusedPatterns, nil
+}
+
+func removeClient(clients []*pubsubClient, cl *pubsubClient) []*pubsubClient {
+	for i, elm := range clients {
+		if elm == cl {
+			return append(clients[:i], clients[i+1:]...)
+		}
+	}
+	return clients
+}
+
+func (r *redisPubSub) clientByChan(subChan SubChan) *pubsubClient {
+	r.clientsLock.RLock()
+	cl := r.clientsByChan[subChan]
+	r.clientsLock.RUnlock()
+	return cl
 }
