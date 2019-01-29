@@ -28,6 +28,10 @@ func (s *subscription) Send(data []byte) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if s.isClosed() {
+		return false
+	}
+
 	select {
 	case s.sendCh <- data:
 		return true
@@ -50,4 +54,13 @@ func (s *subscription) Close() {
 	defer s.mu.Unlock()
 
 	close(s.sendCh)
+}
+
+func (s *subscription) isClosed() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
 }
