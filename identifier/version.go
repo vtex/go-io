@@ -98,8 +98,9 @@ func (id *Version) compareOpt(other ID, opt MatchOptions) int {
 		return strings.Compare(id.Prefix(), other.Prefix())
 	case *Partial:
 		return strings.Compare(id.Prefix(), other.String())
+	default:
+		return strings.Compare(id.String(), other.String())
 	}
-	return 1
 }
 
 func (id *Version) Prefix() string {

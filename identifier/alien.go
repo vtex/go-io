@@ -38,11 +38,7 @@ func (id *Alien) LessThan(other ID) bool {
 }
 
 func (id *Alien) compare(other ID) int {
-	switch other := other.(type) {
-	case *Alien:
-		return strings.Compare(id.raw, other.raw)
-	}
-	return 1
+	return strings.Compare(id.String(), other.String())
 }
 
 func (id *Alien) Prefix() string {

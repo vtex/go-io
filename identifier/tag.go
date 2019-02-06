@@ -39,12 +39,11 @@ func (id *Tag) LessThan(other ID) bool {
 
 func (id *Tag) compare(other ID) int {
 	switch other := other.(type) {
-	case *Tag:
-		return strings.Compare(id.raw, other.raw)
 	case Qualified:
 		return strings.Compare(id.Prefix(), other.Prefix())
+	default:
+		return strings.Compare(id.String(), other.String())
 	}
-	return 1
 }
 
 func (id *Tag) Prefix() string {
