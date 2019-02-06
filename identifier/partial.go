@@ -37,8 +37,9 @@ func (id *Partial) compare(other ID) int {
 	switch other := other.(type) {
 	case Qualified:
 		return strings.Compare(id.raw, other.Prefix())
+	default:
+		return strings.Compare(id.String(), other.String())
 	}
-	return 1
 }
 
 func (id *Partial) AtVersion(version string) (*Version, error) {
