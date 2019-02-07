@@ -54,8 +54,6 @@ func (id *Range) compare(other ID) int {
 
 func (id *Range) compareOpt(other ID, opt MatchOptions) int {
 	switch other := other.(type) {
-	case *Range:
-		return strings.Compare(id.raw, other.raw)
 	case *Version:
 		pidComparison := strings.Compare(id.Prefix(), other.Prefix())
 		if pidComparison != 0 {
@@ -74,8 +72,9 @@ func (id *Range) compareOpt(other ID, opt MatchOptions) int {
 		return strings.Compare(id.Prefix(), other.Prefix())
 	case *Partial:
 		return strings.Compare(id.Prefix(), other.String())
+	default:
+		return strings.Compare(id.String(), other.String())
 	}
-	return 1
 }
 
 func (id *Range) Prefix() string {
