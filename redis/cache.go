@@ -53,6 +53,8 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 
 	if bytes, ok := reply.([]byte); !ok {
 		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
+	} else if err := util.SetPointer(result, bytes); err != nil {
+		return true, nil
 	} else if err := json.Unmarshal(bytes, result); err != nil {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
 	}
@@ -88,9 +90,12 @@ func (r *redisC) SetOpt(key string, value interface{}, options SetOptions) (bool
 		return false, err
 	}
 
-	bytes, err := json.Marshal(value)
-	if err != nil {
-		return false, errors.Wrap(err, "Failed to marshal value for saving to Redis")
+	bytes, isBytes := value.([]byte)
+	if !isBytes {
+		bytes, err = json.Marshal(value)
+		if err != nil {
+			return false, errors.Wrap(err, "Failed to marshal value for saving to Redis")
+		}
 	}
 
 	args := []interface{}{key, bytes, "EX", int(options.ExpireIn.Seconds())}
