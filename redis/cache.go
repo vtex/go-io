@@ -17,6 +17,7 @@ type SetOptions struct {
 
 type Cache interface {
 	Get(key string, result interface{}) (bool, error)
+	Exists(key string) (bool, error)
 	Set(key string, value interface{}, expireIn time.Duration) error
 	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
 	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
@@ -56,6 +57,24 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
 	}
 	return true, nil
+}
+
+func (r *redisC) Exists(key string) (bool, error) {
+	key, err := remoteKey(r.keyNamespace, key)
+	if err != nil {
+		return false, err
+	}
+
+	reply, err := r.doCmd("EXISTS", key)
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+
+	keyExists, isBool := reply.(bool)
+	if !isBool {
+		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
+	}
+	return keyExists, nil
 }
 
 func (r *redisC) Set(key string, value interface{}, expireIn time.Duration) error {
