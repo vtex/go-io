@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver"
+	"github.com/pkg/errors"
 )
 
 type Range struct {
@@ -95,4 +96,24 @@ func (id *Range) Name() string {
 
 func (id *Range) ToPartial() *Partial {
 	return NewPartial(id.vendor, id.name)
+}
+
+func (id *Range) UnmarshalText(b []byte) error {
+    matches := semverIDRegex.FindStringSubmatch(string(b))
+    if len(matches) == 0 {
+        return errors.Errorf("Invalid ID format, must match expression: %s", semverIDRegex.String())
+    }
+    rng, err := NewRange(matches[1], matches[2], matches[3])
+    if err !=nil {
+        return err
+    }
+    *id = *rng
+    return nil
+}
+
+func (id *Range) MarshalText() ([]byte, error) {
+    if id.raw == "" {
+        return nil, errors.New("Cannot marshal uninitialized ID")
+    }
+    return []byte(id.raw), nil
 }
