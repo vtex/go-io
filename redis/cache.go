@@ -53,7 +53,8 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 
 	if bytes, ok := reply.([]byte); !ok {
 		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
-	} else if err := util.SetPointer(result, bytes); err != nil {
+	} else if bytesRes, isBytesPtr := result.(*[]byte); isBytesPtr {
+		*bytesRes = bytes
 		return true, nil
 	} else if err := json.Unmarshal(bytes, result); err != nil {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
