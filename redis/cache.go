@@ -52,8 +52,9 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 	}
 
 	if bytes, ok := reply.([]byte); !ok {
-		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
-	} else if err := util.SetPointer(result, bytes); err != nil {
+		return false, errors.Errorf("Redis response for command GET wasn't a []byte: %s", reply)
+	} else if bytesRes, isBytesPtr := result.(*[]byte); isBytesPtr {
+		*bytesRes = bytes
 		return true, nil
 	} else if err := json.Unmarshal(bytes, result); err != nil {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
@@ -74,7 +75,7 @@ func (r *redisC) Exists(key string) (bool, error) {
 
 	keyExists, isBool := reply.(bool)
 	if !isBool {
-		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
+		return false, errors.Errorf("Redis response for command EXISTS wasn't a bool: %s", reply)
 	}
 	return keyExists, nil
 }
