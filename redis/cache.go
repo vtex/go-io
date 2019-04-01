@@ -45,10 +45,10 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 	}
 
 	reply, err := redis.Bytes(r.doCmd("GET", key))
-	if err != nil {
-		return false, errors.WithStack(err)
-	} else if reply == nil {
+	if err == redis.ErrNil {
 		return false, nil
+	} else if err != nil {
+		return false, errors.WithStack(err)
 	}
 
 	if bytesRes, isBytesPtr := result.(*[]byte); isBytesPtr {
