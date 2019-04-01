@@ -44,19 +44,17 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 		return false, err
 	}
 
-	reply, err := r.doCmd("GET", key)
+	reply, err := redis.Bytes(r.doCmd("GET", key))
 	if err != nil {
 		return false, errors.WithStack(err)
 	} else if reply == nil {
 		return false, nil
 	}
 
-	if bytes, ok := reply.([]byte); !ok {
-		return false, errors.Errorf("Redis response for command GET wasn't a []byte: %s", reply)
-	} else if bytesRes, isBytesPtr := result.(*[]byte); isBytesPtr {
-		*bytesRes = bytes
+	if bytesRes, isBytesPtr := result.(*[]byte); isBytesPtr {
+		*bytesRes = reply
 		return true, nil
-	} else if err := json.Unmarshal(bytes, result); err != nil {
+	} else if err := json.Unmarshal(reply, result); err != nil {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
 	}
 	return true, nil
@@ -68,16 +66,11 @@ func (r *redisC) Exists(key string) (bool, error) {
 		return false, err
 	}
 
-	reply, err := r.doCmd("EXISTS", key)
+	exists, err := redis.Bool(r.doCmd("EXISTS", key))
 	if err != nil {
 		return false, errors.WithStack(err)
 	}
-
-	keyExists, isBool := reply.(bool)
-	if !isBool {
-		return false, errors.Errorf("Redis response for command EXISTS wasn't a bool: %s", reply)
-	}
-	return keyExists, nil
+	return exists, nil
 }
 
 func (r *redisC) Set(key string, value interface{}, expireIn time.Duration) error {
