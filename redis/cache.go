@@ -17,6 +17,7 @@ type SetOptions struct {
 
 type Cache interface {
 	Get(key string, result interface{}) (bool, error)
+	Exists(key string) (bool, error)
 	Set(key string, value interface{}, expireIn time.Duration) error
 	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
 	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
@@ -52,10 +53,30 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 
 	if bytes, ok := reply.([]byte); !ok {
 		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
+	} else if err := util.SetPointer(result, bytes); err != nil {
+		return true, nil
 	} else if err := json.Unmarshal(bytes, result); err != nil {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
 	}
 	return true, nil
+}
+
+func (r *redisC) Exists(key string) (bool, error) {
+	key, err := remoteKey(r.keyNamespace, key)
+	if err != nil {
+		return false, err
+	}
+
+	reply, err := r.doCmd("EXISTS", key)
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+
+	keyExists, isBool := reply.(bool)
+	if !isBool {
+		return false, errors.Errorf("Unrecognized Redis response: %s", reply)
+	}
+	return keyExists, nil
 }
 
 func (r *redisC) Set(key string, value interface{}, expireIn time.Duration) error {
@@ -69,9 +90,12 @@ func (r *redisC) SetOpt(key string, value interface{}, options SetOptions) (bool
 		return false, err
 	}
 
-	bytes, err := json.Marshal(value)
-	if err != nil {
-		return false, errors.Wrap(err, "Failed to marshal value for saving to Redis")
+	bytes, isBytes := value.([]byte)
+	if !isBytes {
+		bytes, err = json.Marshal(value)
+		if err != nil {
+			return false, errors.Wrap(err, "Failed to marshal value for saving to Redis")
+		}
 	}
 
 	args := []interface{}{key, bytes, "EX", int(options.ExpireIn.Seconds())}
