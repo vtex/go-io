@@ -26,8 +26,8 @@ type Cache interface {
 
 func New(endpoint, keyNamespace string) Cache {
 	pool := newRedisPool(endpoint, poolOptions{
-		MaxIdle:        30,
-		MaxActive:      70,
+		MaxIdle:        4,
+		MaxActive:      10,
 		SetReadTimeout: true,
 	})
 	return &redisC{pool: pool, keyNamespace: keyNamespace}
