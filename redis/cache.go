@@ -2,6 +2,8 @@ package redis
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"time"
 
@@ -38,6 +40,7 @@ func New(endpoint, keyNamespace string, timeTracker TimeTracker) Cache {
 type redisC struct {
 	pool         *redis.Pool
 	keyNamespace string
+	timeTracker  TimeTracker
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
@@ -136,10 +139,14 @@ func (r *redisC) Del(key string) error {
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	if r.timeTracker != nil {
-		defer r.timeTracker(cmd, time.Now())
+		defer r.timeTracker(commandKpiName(cmd), time.Now())
 	}
 	conn := r.pool.Get()
 	defer conn.Close()
 	reply, err := conn.Do(cmd, args...)
 	return reply, err
+}
+
+func commandKpiName(cmd string) string {
+	return fmt.Sprintf("redis_command_%s", strings.ToLower(cmd))
 }

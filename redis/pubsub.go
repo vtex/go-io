@@ -26,7 +26,7 @@ func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
 	}
 
 	pubsub := &redisPubSub{
-		redisC:           New(endpoint, keyNamespace).(*redisC),
+		redisC:           New(endpoint, keyNamespace, nil).(*redisC),
 		subscriptionConn: subConn,
 		clientsByChan:    map[SubChan]*pubsubClient{},
 		clientsByPattern: map[string][]*pubsubClient{},
