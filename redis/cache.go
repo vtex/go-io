@@ -2,6 +2,8 @@ package redis
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"time"
 
@@ -9,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vtex/go-io/util"
 )
+
+type TimeTracker func(string, time.Time)
 
 type SetOptions struct {
 	ExpireIn   time.Duration
@@ -24,18 +28,19 @@ type Cache interface {
 	Del(key string) error
 }
 
-func New(endpoint, keyNamespace string) Cache {
+func New(endpoint, keyNamespace string, timeTracker TimeTracker) Cache {
 	pool := newRedisPool(endpoint, poolOptions{
 		MaxIdle:        4,
 		MaxActive:      10,
 		SetReadTimeout: true,
 	})
-	return &redisC{pool: pool, keyNamespace: keyNamespace}
+	return &redisC{pool: pool, keyNamespace: keyNamespace, timeTracker: timeTracker}
 }
 
 type redisC struct {
 	pool         *redis.Pool
 	keyNamespace string
+	timeTracker  TimeTracker
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
@@ -133,8 +138,15 @@ func (r *redisC) Del(key string) error {
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
+	if r.timeTracker != nil {
+		defer r.timeTracker(commandKpiName(cmd), time.Now())
+	}
 	conn := r.pool.Get()
 	defer conn.Close()
 	reply, err := conn.Do(cmd, args...)
 	return reply, err
+}
+
+func commandKpiName(cmd string) string {
+	return fmt.Sprintf("redis_command_%s", strings.ToLower(cmd))
 }
