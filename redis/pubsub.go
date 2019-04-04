@@ -19,14 +19,14 @@ type PubSub interface {
 	Publish(key string, data []byte) error
 }
 
-func NewPubSub(endpoint, keyNamespace string) (PubSub, error) {
+func NewPubSub(endpoint, keyNamespace string, timeTracker TimeTracker) (PubSub, error) {
 	subConn, err := newSubConn(endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	pubsub := &redisPubSub{
-		redisC:           New(endpoint, keyNamespace, nil).(*redisC),
+		redisC:           New(endpoint, keyNamespace, timeTracker).(*redisC),
 		subscriptionConn: subConn,
 		clientsByChan:    map[SubChan]*pubsubClient{},
 		clientsByPattern: map[string][]*pubsubClient{},
