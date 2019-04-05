@@ -154,9 +154,9 @@ func (r *redisC) getConnection() redis.Conn {
 	return r.pool.Get()
 }
 
-func (r *redisC) closeConnection(redis.Conn) error {
+func (r *redisC) closeConnection(conn redis.Conn) error {
 	defer r.timeTracker("redis_close_connection", time.Now())
-	return r.pool.Close()
+	return conn.Close()
 }
 
 func commandKpiName(cmd string) string {
