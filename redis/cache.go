@@ -14,6 +14,12 @@ import (
 
 type TimeTracker func(kpiName string, startTime time.Time)
 
+type RedisConfig struct {
+	Endpoint     string
+	KeyNamespace string
+	TimeTracker  TimeTracker
+}
+
 type SetOptions struct {
 	ExpireIn   time.Duration
 	IfNotExist bool
@@ -28,23 +34,22 @@ type Cache interface {
 	Del(key string) error
 }
 
-func New(endpoint, keyNamespace string, timeTracker TimeTracker) Cache {
-	if timeTracker == nil {
-		timeTracker = func(string, time.Time) {}
+func New(conf RedisConfig) Cache {
+	if conf.TimeTracker == nil {
+		conf.TimeTracker = func(string, time.Time) {}
 	}
 
-	pool := newRedisPool(endpoint, poolOptions{
+	pool := newRedisPool(conf.Endpoint, poolOptions{
 		MaxIdle:        4,
 		MaxActive:      10,
 		SetReadTimeout: true,
 	})
-	return &redisC{pool: pool, keyNamespace: keyNamespace, timeTracker: timeTracker}
+	return &redisC{pool: pool, conf: conf}
 }
 
 type redisC struct {
-	pool         *redis.Pool
-	keyNamespace string
-	timeTracker  TimeTracker
+	pool *redis.Pool
+	conf RedisConfig
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
@@ -117,7 +122,7 @@ func (r *redisC) GetOrSet(key string, result interface{}, expireIn time.Duration
 	if ok, err := r.Get(key, result); ok {
 		return nil
 	} else if err != nil {
-		logError(err, "redis_cache_get_error", r.keyNamespace, key, "Error getting data from redis")
+		logError(err, "redis_cache_get_error", r.conf.KeyNamespace, key, "Error getting data from redis")
 	}
 
 	value, err := fetch()
@@ -143,26 +148,26 @@ func (r *redisC) Del(key string) error {
 
 func (r *redisC) remoteKey(key string) (string, error) {
 	if key == "" {
-		return "", errors.Errorf("Cache key must not be empty (namespace: %s)", r.keyNamespace)
+		return "", errors.Errorf("Cache key must not be empty (namespace: %s)", r.conf.KeyNamespace)
 	}
-	return r.keyNamespace + ":" + key, nil
+	return r.conf.KeyNamespace + ":" + key, nil
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	conn := r.getConnection()
 	defer r.closeConnection(conn)
 
-	defer r.timeTracker(commandKpiName(cmd), time.Now())
+	defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
 	return conn.Do(cmd, args...)
 }
 
 func (r *redisC) getConnection() redis.Conn {
-	defer r.timeTracker("redis_get_connection", time.Now())
+	defer r.conf.TimeTracker("redis_get_connection", time.Now())
 	return r.pool.Get()
 }
 
 func (r *redisC) closeConnection(conn redis.Conn) error {
-	defer r.timeTracker("redis_close_connection", time.Now())
+	defer r.conf.TimeTracker("redis_close_connection", time.Now())
 	return conn.Close()
 }
 
