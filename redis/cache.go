@@ -29,6 +29,10 @@ type Cache interface {
 }
 
 func New(endpoint, keyNamespace string, timeTracker TimeTracker) Cache {
+	if timeTracker == nil {
+		timeTracker = func(string, time.Time) {}
+	}
+
 	pool := newRedisPool(endpoint, poolOptions{
 		MaxIdle:        4,
 		MaxActive:      10,
