@@ -19,14 +19,14 @@ type PubSub interface {
 	Publish(key string, data []byte) error
 }
 
-func NewPubSub(endpoint, keyNamespace string, timeTracker TimeTracker) (PubSub, error) {
-	subConn, err := newSubConn(endpoint)
+func NewPubSub(conf RedisConfig) (PubSub, error) {
+	subConn, err := newSubConn(conf.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	pubsub := &redisPubSub{
-		redisC:           New(endpoint, keyNamespace, timeTracker).(*redisC),
+		redisC:           New(conf).(*redisC),
 		subscriptionConn: subConn,
 		clientsByChan:    map[SubChan]*pubsubClient{},
 		clientsByPattern: map[string][]*pubsubClient{},
@@ -51,7 +51,7 @@ type redisPubSub struct {
 }
 
 func (r *redisPubSub) PSubscribe(patterns []string) (SubChan, error) {
-	patterns, err := remoteKeys(r.keyNamespace, patterns)
+	patterns, err := r.remoteKeys(patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (r *redisPubSub) PUnsubscribe(recvCh SubChan) error {
 }
 
 func (r *redisPubSub) Publish(key string, data []byte) error {
-	key, err := remoteKey(r.keyNamespace, key)
+	key, err := r.remoteKey(key)
 	if err != nil {
 		return err
 	}
@@ -181,4 +181,16 @@ func (r *redisPubSub) clientByChan(subChan SubChan) *pubsubClient {
 	cl := r.clientsByChan[subChan]
 	r.clientsLock.RUnlock()
 	return cl
+}
+
+func (r *redisPubSub) remoteKeys(keys []string) ([]string, error) {
+	var err error
+	remotes := make([]string, len(keys))
+	for i, key := range keys {
+		remotes[i], err = r.remoteKey(key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return remotes, nil
 }
