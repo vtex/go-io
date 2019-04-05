@@ -12,7 +12,7 @@ import (
 	"github.com/vtex/go-io/util"
 )
 
-type TimeTracker func(string, time.Time)
+type TimeTracker func(kpiName string, startTime time.Time)
 
 type SetOptions struct {
 	ExpireIn   time.Duration
