@@ -48,7 +48,7 @@ type redisC struct {
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
-	key, err := remoteKey(r.keyNamespace, key)
+	key, err := r.remoteKey(key)
 	if err != nil {
 		return false, err
 	}
@@ -70,7 +70,7 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 }
 
 func (r *redisC) Exists(key string) (bool, error) {
-	key, err := remoteKey(r.keyNamespace, key)
+	key, err := r.remoteKey(key)
 	if err != nil {
 		return false, err
 	}
@@ -88,7 +88,7 @@ func (r *redisC) Set(key string, value interface{}, expireIn time.Duration) erro
 }
 
 func (r *redisC) SetOpt(key string, value interface{}, options SetOptions) (bool, error) {
-	key, err := remoteKey(r.keyNamespace, key)
+	key, err := r.remoteKey(key)
 	if err != nil {
 		return false, err
 	}
@@ -130,7 +130,7 @@ func (r *redisC) GetOrSet(key string, result interface{}, expireIn time.Duration
 }
 
 func (r *redisC) Del(key string) error {
-	key, err := remoteKey(r.keyNamespace, key)
+	key, err := r.remoteKey(key)
 	if err != nil {
 		return err
 	}
@@ -139,6 +139,13 @@ func (r *redisC) Del(key string) error {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+func (r *redisC) remoteKey(key string) (string, error) {
+	if key == "" {
+		return "", errors.Errorf("Cache key must not be empty (namespace: %s)", r.keyNamespace)
+	}
+	return r.keyNamespace + ":" + key, nil
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
