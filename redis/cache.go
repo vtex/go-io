@@ -15,9 +15,11 @@ import (
 type TimeTracker func(kpiName string, startTime time.Time)
 
 type RedisConfig struct {
-	Endpoint     string
-	KeyNamespace string
-	TimeTracker  TimeTracker
+	Endpoint       string
+	KeyNamespace   string
+	TimeTracker    TimeTracker
+	MaxIdleConns   int
+	MaxActiveConns int
 }
 
 type SetOptions struct {
@@ -38,10 +40,16 @@ func New(conf RedisConfig) Cache {
 	if conf.TimeTracker == nil {
 		conf.TimeTracker = func(string, time.Time) {}
 	}
+	if conf.MaxIdleConns == 0 {
+		conf.MaxIdleConns = 10
+	}
+	if conf.MaxActiveConns == 0 {
+		conf.MaxActiveConns = 20
+	}
 
 	pool := newRedisPool(conf.Endpoint, poolOptions{
-		MaxIdle:        4,
-		MaxActive:      10,
+		MaxIdle:        conf.MaxIdleConns,
+		MaxActive:      conf.MaxActiveConns,
 		SetReadTimeout: true,
 	})
 	return &redisC{pool: pool, conf: conf}
