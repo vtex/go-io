@@ -142,13 +142,21 @@ func (r *redisC) Del(key string) error {
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
-	if r.timeTracker != nil {
-		defer r.timeTracker(commandKpiName(cmd), time.Now())
-	}
-	conn := r.pool.Get()
-	defer conn.Close()
-	reply, err := conn.Do(cmd, args...)
-	return reply, err
+	conn := r.getConnection()
+	defer r.closeConnection(conn)
+
+	defer r.timeTracker(commandKpiName(cmd), time.Now())
+	return conn.Do(cmd, args...)
+}
+
+func (r *redisC) getConnection() redis.Conn {
+	defer r.timeTracker("redis_get_connection", time.Now())
+	return r.pool.Get()
+}
+
+func (r *redisC) closeConnection(redis.Conn) error {
+	defer r.timeTracker("redis_close_connection", time.Now())
+	return r.pool.Close()
 }
 
 func commandKpiName(cmd string) string {
