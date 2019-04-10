@@ -1,0 +1,14 @@
+workspace:
+  base: /go
+  path: src/github.com/vtex/go-io
+
+pipeline:
+  build:
+    image: golang:1.11
+    commands:
+      - make drone
+
+  test:
+    image: golang:1.11
+    commands:
+      - make tests
