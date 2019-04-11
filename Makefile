@@ -1,5 +1,5 @@
 tests:
-	go test `go list ./... | grep -v '^/vendor/'`
+	go test -v ./...
 
 build: go_build
 
