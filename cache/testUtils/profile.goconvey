@@ -1,0 +1,1 @@
+-ldflags=-X github.com/vtex/go-io/conf.Version=0.0.0-goconvey
