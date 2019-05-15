@@ -1,3 +1,5 @@
+export GO111MODULE = on
+
 tests:
 	go test -v ./...
 
