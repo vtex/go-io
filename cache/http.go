@@ -7,6 +7,8 @@ import (
 	"github.com/gregjones/httpcache"
 )
 
-func HTTP(maxCacheSizeMiB int, maxCacheAge time.Duration) httpcache.Cache {
-	return lrucache.New(maxCacheSize*1024*1024, (int64)(maxCacheAge/time.Second))
+func HTTP(maxCacheSizeMiB int64, maxCacheAge time.Duration) httpcache.Cache {
+	cacheSizeBytes := maxCacheSizeMiB * 1024 * 1024
+	maxCacheAgeSec := (int64)(maxCacheAge / time.Second)
+	return lrucache.New(cacheSizeBytes, maxCacheAgeSec)
 }
