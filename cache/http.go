@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maxCacheSize = 128 * 1024 * 1024  // 128MB
+	maxCacheSize = 512 * 1024 * 1024  // 512MB
 	maxCacheAge  = 3 * 24 * time.Hour // 3 days
 )
 
