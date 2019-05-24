@@ -7,10 +7,8 @@ import (
 	"github.com/vtex/go-io/util"
 )
 
-var memCacheInstance = &memCache{gocache.New(60*time.Minute, 10*time.Minute)}
-
-func Memory() Cache {
-	return memCacheInstance
+func NewMemory() Cache {
+	return &memCache{gocache.New(60*time.Minute, 10*time.Minute)}
 }
 
 type memCache struct {
