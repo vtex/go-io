@@ -16,9 +16,6 @@ package prometheus
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -26,7 +23,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/common/expfmt"
 
 	dto "github.com/prometheus/client_model/go"
 
@@ -111,6 +107,9 @@ type Registerer interface {
 	// Collector, and for providing a Collector that will not cause
 	// inconsistent metrics on collection. (This would lead to scrape
 	// errors.)
+	//
+	// It is in general not safe to register the same Collector multiple
+	// times concurrently.
 	Register(Collector) error
 	// MustRegister works like Register but registers any number of
 	// Collectors and panics upon the first registration that causes an
@@ -274,12 +273,7 @@ func (r *Registry) Register(c Collector) error {
 		close(descChan)
 	}()
 	r.mtx.Lock()
-	defer func() {
-		// Drain channel in case of premature return to not leak a goroutine.
-		for range descChan {
-		}
-		r.mtx.Unlock()
-	}()
+	defer r.mtx.Unlock()
 	// Conduct various tests...
 	for desc := range descChan {
 
@@ -537,38 +531,6 @@ func (r *Registry) Gather() ([]*dto.MetricFamily, error) {
 	return internal.NormalizeMetricFamilies(metricFamiliesByName), errs.MaybeUnwrap()
 }
 
-// WriteToTextfile calls Gather on the provided Gatherer, encodes the result in the
-// Prometheus text format, and writes it to a temporary file. Upon success, the
-// temporary file is renamed to the provided filename.
-//
-// This is intended for use with the textfile collector of the node exporter.
-// Note that the node exporter expects the filename to be suffixed with ".prom".
-func WriteToTextfile(filename string, g Gatherer) error {
-	tmp, err := ioutil.TempFile(filepath.Dir(filename), filepath.Base(filename))
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-
-	mfs, err := g.Gather()
-	if err != nil {
-		return err
-	}
-	for _, mf := range mfs {
-		if _, err := expfmt.MetricFamilyToText(tmp, mf); err != nil {
-			return err
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	if err := os.Chmod(tmp.Name(), 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), filename)
-}
-
 // processMetric is an internal helper method only used by the Gather method.
 func processMetric(
 	metric Metric,
@@ -680,7 +642,7 @@ func processMetric(
 // Gatherers is a slice of Gatherer instances that implements the Gatherer
 // interface itself. Its Gather method calls Gather on all Gatherers in the
 // slice in order and returns the merged results. Errors returned from the
-// Gather calls are all returned in a flattened MultiError. Duplicate and
+// Gather calles are all returned in a flattened MultiError. Duplicate and
 // inconsistent Metrics are skipped (first occurrence in slice order wins) and
 // reported in the returned error.
 //
@@ -823,8 +785,6 @@ func checkMetricConsistency(
 	dtoMetric *dto.Metric,
 	metricHashes map[uint64]struct{},
 ) error {
-	name := metricFamily.GetName()
-
 	// Type consistency with metric family.
 	if metricFamily.GetType() == dto.MetricType_GAUGE && dtoMetric.Gauge == nil ||
 		metricFamily.GetType() == dto.MetricType_COUNTER && dtoMetric.Counter == nil ||
@@ -833,52 +793,37 @@ func checkMetricConsistency(
 		metricFamily.GetType() == dto.MetricType_UNTYPED && dtoMetric.Untyped == nil {
 		return fmt.Errorf(
 			"collected metric %q { %s} is not a %s",
-			name, dtoMetric, metricFamily.GetType(),
+			metricFamily.GetName(), dtoMetric, metricFamily.GetType(),
 		)
 	}
 
-	previousLabelName := ""
 	for _, labelPair := range dtoMetric.GetLabel() {
-		labelName := labelPair.GetName()
-		if labelName == previousLabelName {
-			return fmt.Errorf(
-				"collected metric %q { %s} has two or more labels with the same name: %s",
-				name, dtoMetric, labelName,
-			)
-		}
-		if !checkLabelName(labelName) {
+		if !checkLabelName(labelPair.GetName()) {
 			return fmt.Errorf(
 				"collected metric %q { %s} has a label with an invalid name: %s",
-				name, dtoMetric, labelName,
+				metricFamily.GetName(), dtoMetric, labelPair.GetName(),
 			)
 		}
-		if dtoMetric.Summary != nil && labelName == quantileLabel {
+		if dtoMetric.Summary != nil && labelPair.GetName() == quantileLabel {
 			return fmt.Errorf(
 				"collected metric %q { %s} must not have an explicit %q label",
-				name, dtoMetric, quantileLabel,
+				metricFamily.GetName(), dtoMetric, quantileLabel,
 			)
 		}
 		if !utf8.ValidString(labelPair.GetValue()) {
 			return fmt.Errorf(
 				"collected metric %q { %s} has a label named %q whose value is not utf8: %#v",
-				name, dtoMetric, labelName, labelPair.GetValue())
+				metricFamily.GetName(), dtoMetric, labelPair.GetName(), labelPair.GetValue())
 		}
-		previousLabelName = labelName
 	}
 
 	// Is the metric unique (i.e. no other metric with the same name and the same labels)?
 	h := hashNew()
-	h = hashAdd(h, name)
+	h = hashAdd(h, metricFamily.GetName())
 	h = hashAddByte(h, separatorByte)
 	// Make sure label pairs are sorted. We depend on it for the consistency
 	// check.
-	if !sort.IsSorted(labelPairSorter(dtoMetric.Label)) {
-		// We cannot sort dtoMetric.Label in place as it is immutable by contract.
-		copiedLabels := make([]*dto.LabelPair, len(dtoMetric.Label))
-		copy(copiedLabels, dtoMetric.Label)
-		sort.Sort(labelPairSorter(copiedLabels))
-		dtoMetric.Label = copiedLabels
-	}
+	sort.Sort(labelPairSorter(dtoMetric.Label))
 	for _, lp := range dtoMetric.Label {
 		h = hashAdd(h, lp.GetName())
 		h = hashAddByte(h, separatorByte)
@@ -888,7 +833,7 @@ func checkMetricConsistency(
 	if _, exists := metricHashes[h]; exists {
 		return fmt.Errorf(
 			"collected metric %q { %s} was collected before with the same name and label values",
-			name, dtoMetric,
+			metricFamily.GetName(), dtoMetric,
 		)
 	}
 	metricHashes[h] = struct{}{}
@@ -909,8 +854,8 @@ func checkDescConsistency(
 	}
 
 	// Is the desc consistent with the content of the metric?
-	lpsFromDesc := make([]*dto.LabelPair, len(desc.constLabelPairs), len(dtoMetric.Label))
-	copy(lpsFromDesc, desc.constLabelPairs)
+	lpsFromDesc := make([]*dto.LabelPair, 0, len(dtoMetric.Label))
+	lpsFromDesc = append(lpsFromDesc, desc.constLabelPairs...)
 	for _, l := range desc.variableLabels {
 		lpsFromDesc = append(lpsFromDesc, &dto.LabelPair{
 			Name: proto.String(l),

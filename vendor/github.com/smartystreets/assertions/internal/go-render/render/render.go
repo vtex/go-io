@@ -143,24 +143,20 @@ func (s *traverseState) render(buf *bytes.Buffer, ptrs int, v reflect.Value, imp
 		if !implicit {
 			writeType(buf, ptrs, vt)
 		}
+		structAnon := vt.Name() == ""
 		buf.WriteRune('{')
-		if rendered, ok := renderTime(v); ok {
-			buf.WriteString(rendered)
-		} else {
-			structAnon := vt.Name() == ""
-			for i := 0; i < vt.NumField(); i++ {
-				if i > 0 {
-					buf.WriteString(", ")
-				}
-				anon := structAnon && isAnon(vt.Field(i).Type)
-
-				if !anon {
-					buf.WriteString(vt.Field(i).Name)
-					buf.WriteRune(':')
-				}
-
-				s.render(buf, 0, v.Field(i), anon)
+		for i := 0; i < vt.NumField(); i++ {
+			if i > 0 {
+				buf.WriteString(", ")
 			}
+			anon := structAnon && isAnon(vt.Field(i).Type)
+
+			if !anon {
+				buf.WriteString(vt.Field(i).Name)
+				buf.WriteRune(':')
+			}
+
+			s.render(buf, 0, v.Field(i), anon)
 		}
 		buf.WriteRune('}')
 

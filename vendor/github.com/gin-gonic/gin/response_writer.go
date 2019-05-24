@@ -13,10 +13,10 @@ import (
 
 const (
 	noWritten     = -1
-	defaultStatus = http.StatusOK
+	defaultStatus = 200
 )
 
-type responseWriterBase interface {
+type ResponseWriter interface {
 	http.ResponseWriter
 	http.Hijacker
 	http.Flusher
@@ -110,6 +110,5 @@ func (w *responseWriter) CloseNotify() <-chan bool {
 
 // Flush implements the http.Flush interface.
 func (w *responseWriter) Flush() {
-	w.WriteHeaderNow()
 	w.ResponseWriter.(http.Flusher).Flush()
 }
