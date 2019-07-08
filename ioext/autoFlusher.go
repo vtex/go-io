@@ -7,12 +7,30 @@ import (
 	"time"
 )
 
+type BufIoWriteFlusher interface {
+	io.Writer
+	Flush() error
+}
+
 type WriteFlusher interface {
 	io.Writer
 	http.Flusher
 }
 
+type bufIoWrapper struct {
+	WriteFlusher
+}
+
+func (b bufIoWrapper) Flush() error {
+	b.WriteFlusher.Flush()
+	return nil
+}
+
 func NewAutoFlusher(wf WriteFlusher, flushLatency time.Duration) *AutoFlusher {
+	return NewBufIoAutoFlusher(bufIoWrapper{wf}, flushLatency)
+}
+
+func NewBufIoAutoFlusher(wf BufIoWriteFlusher, flushLatency time.Duration) *AutoFlusher {
 	af := &AutoFlusher{
 		wf:   wf,
 		done: make(chan struct{}),
@@ -22,10 +40,11 @@ func NewAutoFlusher(wf WriteFlusher, flushLatency time.Duration) *AutoFlusher {
 }
 
 type AutoFlusher struct {
-	wf   WriteFlusher
+	wf   BufIoWriteFlusher
 	done chan struct{}
 
 	mu           sync.Mutex
+	err          error
 	flushPending bool
 }
 
@@ -33,6 +52,10 @@ func (af *AutoFlusher) Write(p []byte) (int, error) {
 	af.mu.Lock()
 	defer af.mu.Unlock()
 
+	if err := af.err; err != nil {
+		af.err = nil
+		return 0, err
+	}
 	n, err := af.wf.Write(p)
 	if n > 0 {
 		af.flushPending = true
@@ -54,7 +77,7 @@ func (af *AutoFlusher) flushLoop(latency time.Duration) {
 		case <-ticker.C:
 			af.mu.Lock()
 			if af.flushPending {
-				af.wf.Flush()
+				af.err = af.wf.Flush()
 				af.flushPending = false
 			}
 			af.mu.Unlock()
