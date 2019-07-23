@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const vendorPattern string = `[a-z][a-z0-9-]{0,18}[a-z0-9]`
+const vendorPattern string = `[a-z][a-z0-9-]{0,48}[a-z0-9]`
 const namePattern string = `[a-z][a-z0-9-]{0,126}[a-z0-9]`
 const enginePattern string = vendorPattern
 const tagPattern string = vendorPattern
