@@ -34,6 +34,7 @@ type Cache interface {
 	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
 	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
 	Del(key string) error
+	DeleteMatching(pattern string) error
 }
 
 func New(conf RedisConfig) Cache {
@@ -154,6 +155,37 @@ func (r *redisC) Del(key string) error {
 	return nil
 }
 
+func (r *redisC) DeleteMatching(pattern string) error {
+	pattern, err := r.remoteKey(pattern)
+	if err != nil {
+		return err
+	}
+
+	// Use the same connection to run multiple commands.
+	conn := r.getConnection()
+	defer r.closeConnection(conn)
+
+	var keys []interface{}
+
+	// We will use SCAN to go through the keys we want to delete without blocking the Redis server.
+	cursor := "0"
+	for {
+		cursor, keys, err = scanIteration(conn, cursor, pattern)
+		if err != nil {
+		}
+
+		if len(keys) > 0 {
+			if _, err := conn.Do("DEL", keys...); err != nil {
+				return err
+			}
+		}
+
+		if cursor == "0" {
+			return nil
+		}
+	}
+}
+
 func (r *redisC) remoteKey(key string) (string, error) {
 	if key == "" {
 		return "", errors.Errorf("Cache key must not be empty (namespace: %s)", r.conf.KeyNamespace)
@@ -181,4 +213,24 @@ func (r *redisC) closeConnection(conn redis.Conn) error {
 
 func commandKpiName(cmd string) string {
 	return fmt.Sprintf("redis_command_%s", strings.ToLower(cmd))
+}
+
+func scanIteration(conn redis.Conn, cursor, pattern string) (string, []interface{}, error) {
+	reply, err := conn.Do("SCAN", cursor, "MATCH", pattern)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// res is a slice that contains a []byte with a single element, which is the next cursor we need to use, and a
+	// []interface{}, whose elements are []byte and each represent a key if when converted to string.
+	res := reply.([]interface{})
+
+	cursor = string(res[0].([]byte))
+	keysBts := res[1].([]interface{})
+	keys := make([]interface{}, len(keysBts))
+	for i, key := range keysBts {
+		keys[i] = string(key.([]byte))
+	}
+
+	return cursor, keys, nil
 }
