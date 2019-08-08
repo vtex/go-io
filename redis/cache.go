@@ -172,6 +172,7 @@ func (r *redisC) DeleteMatching(pattern string) error {
 	for {
 		cursor, keys, err = scanIteration(conn, cursor, pattern)
 		if err != nil {
+			return err
 		}
 
 		if len(keys) > 0 {
