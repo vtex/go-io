@@ -35,6 +35,7 @@ type Cache interface {
 	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
 	Del(key string) error
 	DeleteMatching(pattern string) error
+	Incr(key string) (int64, error)
 }
 
 func New(conf RedisConfig) Cache {
@@ -81,6 +82,20 @@ func (r *redisC) Get(key string, result interface{}) (bool, error) {
 		return false, errors.Wrap(err, "Failed to umarshal Redis response")
 	}
 	return true, nil
+}
+
+func (r *redisC) Incr(key string) (int64, error) {
+	key, err := r.remoteKey(key)
+	if err != nil {
+		return 0, err
+	}
+
+	val, err := redis.Int64(r.doCmd("INCR", key))
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+
+	return val, nil
 }
 
 func (r *redisC) Exists(key string) (bool, error) {
