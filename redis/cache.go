@@ -34,7 +34,6 @@ type Cache interface {
 	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
 	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
 	Del(key string) error
-	DeleteMatching(pattern string) error
 	Incr(key string) (int64, error)
 }
 
@@ -168,38 +167,6 @@ func (r *redisC) Del(key string) error {
 		return errors.WithStack(err)
 	}
 	return nil
-}
-
-func (r *redisC) DeleteMatching(pattern string) error {
-	pattern, err := r.remoteKey(pattern)
-	if err != nil {
-		return err
-	}
-
-	// Use the same connection to run multiple commands.
-	conn := r.getConnection()
-	defer r.closeConnection(conn)
-
-	var keys []interface{}
-
-	// We will use SCAN to go through the keys we want to delete without blocking the Redis server.
-	cursor := "0"
-	for {
-		cursor, keys, err = scanIteration(conn, cursor, pattern)
-		if err != nil {
-			return err
-		}
-
-		if len(keys) > 0 {
-			if _, err := conn.Do("DEL", keys...); err != nil {
-				return err
-			}
-		}
-
-		if cursor == "0" {
-			return nil
-		}
-	}
 }
 
 func (r *redisC) remoteKey(key string) (string, error) {
