@@ -12,6 +12,10 @@ import (
 	"github.com/vtex/go-io/util"
 )
 
+const (
+	maxRedisCacheDuration = 12 * time.Hour
+)
+
 type TimeTracker func(kpiName string, startTime time.Time)
 
 type RedisConfig struct {
@@ -129,7 +133,8 @@ func (r *redisC) SetOpt(key string, value interface{}, options SetOptions) (bool
 		}
 	}
 
-	args := []interface{}{key, bytes, "EX", int(options.ExpireIn.Seconds())}
+	cacheDuration := minDuration(options.ExpireIn, maxRedisCacheDuration)
+	args := []interface{}{key, bytes, "EX", int(cacheDuration.Seconds())}
 	if options.IfNotExist {
 		args = append(args, "NX")
 	}
@@ -226,4 +231,11 @@ func scanIteration(conn redis.Conn, cursor, pattern string) (string, []interface
 	}
 
 	return cursor, keys, nil
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
