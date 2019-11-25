@@ -203,36 +203,6 @@ func commandKpiName(cmd string) string {
 	return fmt.Sprintf("redis_command_%s", strings.ToLower(cmd))
 }
 
-func scanIteration(conn redis.Conn, cursor, pattern string) (string, []interface{}, error) {
-	reply, err := conn.Do("SCAN", cursor, "MATCH", pattern)
-	if err != nil {
-		return "", nil, err
-	}
-
-	// res is a slice that contains a []byte with a single element, which is the next cursor we need to use, and a
-	// []interface{}, whose elements are []byte and each represent a key if when converted to string.
-	res, err := redis.Values(reply, err)
-	if err != nil {
-		return "", nil, err
-	}
-
-	if len(res) != 2 {
-		return "", nil, errors.Errorf("Invalid response from Redis. Expected array of length 2, but got length %d", len(res))
-	}
-
-	cursor, err = redis.String(res[0], err)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "Unable to get cursor for next scan iteration")
-	}
-
-	keys, err := redis.Values(res[1], err)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "Unable to get keys from scan iteration")
-	}
-
-	return cursor, keys, nil
-}
-
 func minDuration(a, b time.Duration) time.Duration {
 	if a < b {
 		return a
