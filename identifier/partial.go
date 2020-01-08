@@ -53,14 +53,13 @@ func (id *Partial) WithRange(constraint string) (*Range, error) {
 }
 
 func (id *Partial) UnmarshalText(b []byte) error {
-	raw := string(b)
-	matches := strings.Split(raw, ".")
+	matches := partialIDRegex.FindStringSubmatch(string(b))
 	if len(matches) == 0 {
-		return errors.Errorf("Invalid partial ID format, must be vendor.name")
+		return errors.Errorf("Invalid ID format, must match expression: %s", partialIDRegex.String())
 	}
 
 	*id = Partial{
-		raw:    raw,
+		raw:    matches[0] + "." + matches[1],
 		Vendor: matches[0],
 		Name:   matches[1],
 	}
