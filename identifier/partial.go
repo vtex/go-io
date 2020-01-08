@@ -2,6 +2,8 @@ package identifier
 
 import (
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type Partial struct {
@@ -48,4 +50,25 @@ func (id *Partial) AtVersion(version string) (*Version, error) {
 
 func (id *Partial) WithRange(constraint string) (*Range, error) {
 	return NewRange(id.Vendor, id.Name, constraint)
+}
+
+func (id *Partial) UnmarshalText(b []byte) error {
+	matches := partialIDRegex.FindStringSubmatch(string(b))
+	if len(matches) == 0 {
+		return errors.Errorf("Invalid ID format, must match expression: %s", partialIDRegex.String())
+	}
+
+	*id = Partial{
+		raw:    matches[0] + "." + matches[1],
+		Vendor: matches[0],
+		Name:   matches[1],
+	}
+	return nil
+}
+
+func (id *Partial) MarshalText() ([]byte, error) {
+	if id.raw == "" {
+		return nil, errors.New("Cannot marshal uninitialized ID")
+	}
+	return []byte(id.raw), nil
 }
