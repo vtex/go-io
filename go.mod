@@ -29,3 +29,5 @@ require (
 	gopkg.in/go-playground/validator.v8 v8.18.2
 	gopkg.in/yaml.v2 v2.0.0-20171116090243-287cf08546ab
 )
+
+go 1.13
