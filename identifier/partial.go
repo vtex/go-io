@@ -59,9 +59,9 @@ func (id *Partial) UnmarshalText(b []byte) error {
 	}
 
 	*id = Partial{
-		raw:    matches[0] + "." + matches[1],
-		Vendor: matches[0],
-		Name:   matches[1],
+		raw:    matches[0],
+		Vendor: matches[1],
+		Name:   matches[2],
 	}
 	return nil
 }
