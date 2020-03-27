@@ -1,7 +1,7 @@
 package redis
 
 import (
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 func logError(err error, code, namespace, key, msg string) {

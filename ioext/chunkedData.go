@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/gin-gonic/gin/render"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (

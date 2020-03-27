@@ -1,8 +1,8 @@
 package cache
 
 import (
-	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // ensureValidCacheKey is a utility function that centralizes checking of keys that is repeated in many functions.
