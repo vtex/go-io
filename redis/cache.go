@@ -9,7 +9,7 @@ import (
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
-	"github.com/vtex/go-io/util"
+	"github.com/vtex/go-io/reflext"
 )
 
 const (
@@ -159,7 +159,7 @@ func (r *redisC) GetOrSet(key string, result interface{}, expireIn time.Duration
 	}
 
 	r.Set(key, value, expireIn)
-	return util.SetPointer(result, value)
+	return reflext.SetPointer(result, value)
 }
 
 func (r *redisC) Del(key string) error {

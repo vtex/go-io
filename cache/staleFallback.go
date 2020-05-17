@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/vtex/go-io/util"
+	"github.com/vtex/go-io/reflext"
 )
 
 const (
@@ -50,7 +50,7 @@ func (c *staleFallbackCache) GetOrSet(key string, result interface{}, duration t
 	}
 
 	c.Set(key, value, duration)
-	return util.SetPointer(result, value)
+	return reflext.SetPointer(result, value)
 }
 
 // Get tries to get a fresh cached version of the data.
