@@ -9,6 +9,7 @@ import (
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
+	"github.com/vtex/go-io/cache"
 	"github.com/vtex/go-io/reflext"
 )
 
@@ -32,11 +33,9 @@ type SetOptions struct {
 }
 
 type Cache interface {
-	Get(key string, result interface{}) (bool, error)
+	cache.Cache
 	Exists(key string) (bool, error)
-	Set(key string, value interface{}, expireIn time.Duration) error
 	SetOpt(key string, value interface{}, options SetOptions) (bool, error)
-	GetOrSet(key string, result interface{}, expireIn time.Duration, fetch func() (interface{}, error)) error
 	Del(key string) error
 	Incr(key string) (int64, error)
 }
