@@ -4,11 +4,11 @@ workspace:
 
 pipeline:
   build:
-    image: golang:1.11
+    image: golang:1.14
     commands:
       - make drone
 
   test:
-    image: golang:1.11
+    image: golang:1.14
     commands:
       - make tests
