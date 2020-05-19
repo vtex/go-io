@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/vtex/go-io/util"
+	"github.com/vtex/go-io/reflext"
 )
 
 const (
@@ -100,7 +100,7 @@ func (c *hybridCache) GetOrSet(key string, result interface{}, duration time.Dur
 	}
 
 	c.Set(key, value, duration)
-	return util.SetPointer(result, value)
+	return reflext.SetPointer(result, value)
 }
 
 func logGetLocalDataError(key string, cached bool, err error) {

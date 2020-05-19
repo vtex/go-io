@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/vtex/go-io/util"
+	"github.com/vtex/go-io/reflext"
 )
 
 var (
@@ -97,7 +97,7 @@ func (c *FakeCache) GetOrSet(key string, result interface{}, duration time.Durat
 		return errors.Wrapf(err, "Failed to save fetched value to cache")
 	}
 
-	err = util.SetPointer(result, value)
+	err = reflext.SetPointer(result, value)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to copy fetched value to result variable")
 	}

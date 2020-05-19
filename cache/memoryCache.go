@@ -4,7 +4,7 @@ import (
 	"time"
 
 	gocache "github.com/pmylund/go-cache"
-	"github.com/vtex/go-io/util"
+	"github.com/vtex/go-io/reflext"
 )
 
 func NewMemory() Cache {
@@ -30,7 +30,7 @@ func (c *memCache) GetOrSet(key string, result interface{}, duration time.Durati
 	}
 
 	c.Set(key, value, duration)
-	return util.SetPointer(result, value)
+	return reflext.SetPointer(result, value)
 }
 
 func (c *memCache) Get(key string, result interface{}) (bool, error) {
@@ -39,7 +39,7 @@ func (c *memCache) Get(key string, result interface{}) (bool, error) {
 		return false, nil
 	}
 
-	return true, util.SetPointer(result, value)
+	return true, reflext.SetPointer(result, value)
 }
 
 func (c *memCache) Set(key string, value interface{}, duration time.Duration) error {
