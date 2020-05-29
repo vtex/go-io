@@ -67,18 +67,18 @@ func (u *unionContext) AddContext(ctx context.Context) bool {
 func (u *unionContext) cancelLoop() {
 	for {
 		for {
-			next := u.popFirstWithLock()
-			if next == nil {
+			first := u.getFirstWithLock()
+			if first == nil {
 				break
 			}
 
 			select {
+			case <-first.Done():
+				u.popFirstWithLock()
 			case <-u.Done():
 				return
-			case <-next.Done():
 			}
 		}
-
 		if u.cancelIfEmpty() {
 			return
 		}
@@ -96,20 +96,21 @@ func (u *unionContext) cancelIfEmpty() (cancelled bool) {
 	return false
 }
 
-func (u *unionContext) popFirstWithLock() context.Context {
-	u.mu.Lock()
-	defer u.mu.Unlock()
+func (u *unionContext) getFirstWithLock() context.Context {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 	if len(u.subContexts) == 0 {
 		return nil
 	}
-
-	first := u.subContexts[0]
-	u.subContexts = removeFirst(u.subContexts)
-	return first
+	return u.subContexts[0]
 }
 
-func removeFirst(slc []context.Context) []context.Context {
-	copy(slc, slc[1:])
-	slc[len(slc)-1] = nil
-	return slc[:len(slc)-1]
+func (u *unionContext) popFirstWithLock() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(u.subContexts) == 0 {
+		return
+	}
+	u.subContexts[0] = nil
+	u.subContexts = u.subContexts[1:]
 }
