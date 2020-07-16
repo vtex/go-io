@@ -86,7 +86,7 @@ func (c *subConn) mainLoop() {
 		done    = make(chan struct{})
 		msgChan = connReceiveChan(c.currConn, done)
 	)
-	recover := func() {
+	recoverConn := func() {
 		close(done)
 
 		c.recoverConn()
@@ -94,15 +94,15 @@ func (c *subConn) mainLoop() {
 		msgChan = connReceiveChan(c.currConn, done)
 	}
 	for {
-		err, errCode, errMsg := c.mainIteration(pingTicker.C, &pongTimeoutChan, msgChan)
+		err, errCode, errMsg := c.mainIteration(pingTicker.C, &pongTimeoutChan, msgChan, recoverConn)
 		if err != nil {
 			logError(err, errCode, "", "", errMsg)
-			recover()
+			recoverConn()
 		}
 	}
 }
 
-func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-chan time.Time, msgChan <-chan interface{}) (err error, errCode, errMsg string) {
+func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-chan time.Time, msgChan <-chan interface{}, recoverConn func()) (err error, errCode, errMsg string) {
 	select {
 	case <-pingTicker:
 		err = c.currConn.Ping("")
@@ -136,7 +136,7 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 			// Retry at most once otherwise just drop the subscription request.
 			// This is a safety guard (instead of retrying indefinitely), in case
 			// some bad input is sent to us.
-			recover()
+			recoverConn()
 			err = c.currConn.PSubscribe(patterns...)
 			if err != nil {
 				return err, "subscribe_error", "Redis PSubscribe command error"
