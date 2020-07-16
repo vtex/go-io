@@ -15,6 +15,8 @@ type subConn struct {
 	pool       *redis.Pool
 	outputChan chan redis.Message
 
+	subscribeChan      chan []interface{}
+	unsubscribeChan    chan []interface{}
 	subscribedPatterns map[interface{}]bool
 
 	currConn *redis.PubSubConn
@@ -28,6 +30,8 @@ func newSubConn(endpoint string) (*subConn, error) {
 	})
 	subConn := &subConn{
 		pool:               pool,
+		subscribeChan:      make(chan []interface{}, 10),
+		unsubscribeChan:    make(chan []interface{}, 10),
 		outputChan:         make(chan redis.Message, 10),
 		subscribedPatterns: map[interface{}]bool{},
 	}
@@ -41,16 +45,11 @@ func newSubConn(endpoint string) (*subConn, error) {
 }
 
 func (c *subConn) PSubscribe(patterns []interface{}) error {
-	if err := c.currConn.PSubscribe(patterns...); err != nil {
-		return errors.WithStack(err)
+	if len(patterns) == 0 {
+		return errors.New("Must send at least one pattern to subscribe")
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, pattern := range patterns {
-		c.subscribedPatterns[pattern] = true
-	}
+	c.subscribeChan <- patterns
 	return nil
 }
 
@@ -105,6 +104,19 @@ func (c *subConn) mainLoop() {
 		case <-pongTimeoutChan:
 			pongTimeoutChan = nil
 			recover()
+
+		case patterns := <-c.subscribeChan:
+			if err := c.currConn.PSubscribe(patterns...); err != nil {
+				logError(err, "subscribe_error", "", "", "Redis PSubscribe command error")
+				recover()
+				continue
+			}
+
+			c.mu.Lock()
+			for _, pattern := range patterns {
+				c.subscribedPatterns[pattern] = true
+			}
+			c.mu.Unlock()
 
 		case msg := <-msgChan:
 			switch v := msg.(type) {
