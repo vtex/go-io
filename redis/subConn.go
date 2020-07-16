@@ -9,7 +9,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-const pongTimeout = 5 * time.Second
+const (
+	pongTimeout      = 5 * time.Second
+	subscribeTimeout = 10 * time.Second
+)
 
 var (
 	unknownMessageTypeErr = goErrors.New("Unknown message type")
@@ -54,8 +57,12 @@ func (c *subConn) PSubscribe(patterns []interface{}) error {
 		return errors.New("Must send at least one pattern to subscribe")
 	}
 
-	c.subscribeChan <- patterns
-	return nil
+	select {
+	case c.subscribeChan <- patterns:
+		return nil
+	case <-time.After(subscribeTimeout):
+		return errors.New("Timeout")
+	}
 }
 
 func (c *subConn) PUnsubscribe(patterns []interface{}) error {
