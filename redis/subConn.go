@@ -96,9 +96,15 @@ func (c *subConn) mainLoop() {
 
 		case patterns := <-c.subscribeChan:
 			if err := c.currConn.PSubscribe(patterns...); err != nil {
-				logError(err, "subscribe_error", "", "", "Redis PSubscribe command error")
 				recover()
-				continue
+
+				if err := c.currConn.PSubscribe(patterns...); err != nil {
+					// Retry at most once otherwise just drop the subscription request.
+					// This is a safety guard (instead of retrying indefinitely), in case
+					// some bad input is sent to us.
+					logError(err, "subscribe_error", "", "", "Redis PSubscribe command error")
+					continue
+				}
 			}
 
 			for _, pattern := range patterns {
@@ -106,14 +112,19 @@ func (c *subConn) mainLoop() {
 			}
 
 		case patterns := <-c.unsubscribeChan:
-			if err := c.currConn.PUnsubscribe(patterns...); err != nil {
-				logError(err, "unsubscribe_error", "", "", "Redis PUnsubscribe command error")
-				recover()
-				continue
+			toUnsubscribe := make([]interface{}, 0, len(patterns))
+			for _, pattern := range patterns {
+				if isSubscribed := c.subscribedPatterns[pattern]; isSubscribed {
+					toUnsubscribe = append(toUnsubscribe, pattern)
+					delete(c.subscribedPatterns, pattern)
+				}
 			}
 
-			for _, pattern := range patterns {
-				delete(c.subscribedPatterns, pattern)
+			if err := c.currConn.PUnsubscribe(toUnsubscribe...); err != nil {
+				logError(err, "unsubscribe_error", "", "", "Redis PUnsubscribe command error")
+				recover()
+				// We don't need to retry here, since we've already removed the specific subscriptions
+				// from the subscribedPatterns field, so the recovered connection is already unsubscribed.
 			}
 
 		case msg := <-msgChan:
