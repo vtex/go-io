@@ -61,7 +61,7 @@ func (c *subConn) PSubscribe(patterns []interface{}) error {
 	case c.subscribeChan <- patterns:
 		return nil
 	case <-time.After(subscribeTimeout):
-		return errors.New("Timeout")
+		return errors.New("Timeout sending patterns to subscriptions channel")
 	}
 }
 
