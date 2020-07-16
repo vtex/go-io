@@ -162,9 +162,8 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 
 // Retries to reset pub/sub connection until no error occurrs
 func (c *subConn) recoverConn() {
-	if err := c.currConn.Conn.Err(); err != nil {
-		logError(err, "redis_conn_error", "", "", "Redis connection error")
-	}
+	err := c.currConn.Conn.Err()
+	logError(err, "redis_conn_recover", "", "", "Recovering Redis connection due to error")
 
 	for {
 		err := c.resetConn()
