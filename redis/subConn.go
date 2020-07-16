@@ -58,16 +58,7 @@ func (c *subConn) PUnsubscribe(patterns []interface{}) error {
 		return errors.New("Must send at least one pattern to unsubscribe")
 	}
 
-	if err := c.currConn.PUnsubscribe(patterns...); err != nil {
-		return errors.WithStack(err)
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, pattern := range patterns {
-		delete(c.subscribedPatterns, pattern)
-	}
+	c.unsubscribeChan <- patterns
 	return nil
 }
 
@@ -115,6 +106,19 @@ func (c *subConn) mainLoop() {
 			c.mu.Lock()
 			for _, pattern := range patterns {
 				c.subscribedPatterns[pattern] = true
+			}
+			c.mu.Unlock()
+
+		case patterns := <-c.unsubscribeChan:
+			if err := c.currConn.PUnsubscribe(patterns...); err != nil {
+				logError(err, "unsubscribe_error", "", "", "Redis PUnsubscribe command error")
+				recover()
+				continue
+			}
+
+			c.mu.Lock()
+			for _, pattern := range patterns {
+				delete(c.subscribedPatterns, pattern)
 			}
 			c.mu.Unlock()
 
