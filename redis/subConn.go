@@ -80,7 +80,7 @@ func (c *subConn) ReceiveChan() <-chan redis.Message {
 
 func (c *subConn) mainLoop() {
 	var (
-		pingTicker      = time.NewTicker(pingDelay)
+		pingTicker      = time.Tick(pingDelay)
 		pongTimeoutChan <-chan time.Time
 
 		done    = make(chan struct{})
@@ -94,7 +94,7 @@ func (c *subConn) mainLoop() {
 		msgChan = connReceiveChan(c.currConn, done)
 	}
 	for {
-		err, errCode, errMsg := c.mainIteration(pingTicker.C, &pongTimeoutChan, msgChan, recoverConn)
+		err, errCode, errMsg := c.mainIteration(pingTicker, &pongTimeoutChan, msgChan, recoverConn)
 		if err != nil {
 			logError(err, errCode, "", "", errMsg)
 			recoverConn()
@@ -109,7 +109,7 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 		if err != nil {
 			return err, "pubsub_ping_error", "Redis error pinging pub/sub connection"
 		}
-		*pongTimeoutChan = time.Tick(pongTimeout)
+		*pongTimeoutChan = time.After(pongTimeout)
 		return nil, "", ""
 
 	case msg := <-msgChan:
