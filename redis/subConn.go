@@ -80,75 +80,74 @@ func (c *subConn) mainLoop() {
 		msgChan = connReceiveChan(c.currConn, done)
 	}
 	for {
-		var (
-			err             error
-			errCode, errMsg string
-		)
-
-		select {
-		case <-pingTicker.C:
-			err = c.currConn.Ping("")
-			if err == nil {
-				pongTimeoutChan = time.Tick(pongTimeout)
-			} else {
-				errCode, errMsg = "pubsub_ping_error", "Redis error pinging pub/sub connection"
-			}
-
-		case <-pongTimeoutChan:
-			pongTimeoutChan = nil
-			err, errCode, errMsg = errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
-
-		case patterns := <-c.subscribeChan:
-			if err = c.currConn.PSubscribe(patterns...); err != nil {
-				errCode, errMsg = "subscribe_error", "Redis PSubscribe command error"
-				// Retry at most once otherwise just drop the subscription request.
-				// This is a safety guard (instead of retrying indefinitely), in case
-				// some bad input is sent to us.
-				recover()
-				err = c.currConn.PSubscribe(patterns...)
-				if err != nil {
-					break
-				}
-			}
-
-			for _, pattern := range patterns {
-				c.subscribedPatterns[pattern] = true
-			}
-
-		case patterns := <-c.unsubscribeChan:
-			toUnsubscribe := make([]interface{}, 0, len(patterns))
-			for _, pattern := range patterns {
-				if c.subscribedPatterns[pattern] {
-					toUnsubscribe = append(toUnsubscribe, pattern)
-					delete(c.subscribedPatterns, pattern)
-				}
-			}
-
-			if err = c.currConn.PUnsubscribe(toUnsubscribe...); err != nil {
-				errCode, errMsg = "unsubscribe_error", "Redis PUnsubscribe command error"
-				// We don't need to retry here, since we've already removed the specific subscriptions
-				// from the subscribedPatterns field, so when we recover the connection belo it will
-				// come back already unsubscribed from the requested patterns.
-			}
-
-		case msg := <-msgChan:
-			switch v := msg.(type) {
-			case redis.Message:
-				c.outputChan <- v
-
-			case redis.Pong:
-				pongTimeoutChan = nil
-
-			case error:
-				err, errCode, errMsg = v, "pubsub_error", "Redis pub/sub error"
-			}
-		}
-
+		err, errCode, errMsg := c.mainIteration(pingTicker.C, &pongTimeoutChan, msgChan)
 		if err != nil {
 			logError(err, errCode, "", "", errMsg)
 			recover()
 		}
 	}
+}
+
+func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-chan time.Time, msgChan <-chan interface{}) (err error, errCode, errMsg string) {
+	select {
+	case <-pingTicker:
+		err = c.currConn.Ping("")
+		if err == nil {
+			*pongTimeoutChan = time.Tick(pongTimeout)
+		} else {
+			errCode, errMsg = "pubsub_ping_error", "Redis error pinging pub/sub connection"
+		}
+
+	case <-*pongTimeoutChan:
+		*pongTimeoutChan = nil
+		err, errCode, errMsg = errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
+
+	case patterns := <-c.subscribeChan:
+		if err = c.currConn.PSubscribe(patterns...); err != nil {
+			errCode, errMsg = "subscribe_error", "Redis PSubscribe command error"
+			// Retry at most once otherwise just drop the subscription request.
+			// This is a safety guard (instead of retrying indefinitely), in case
+			// some bad input is sent to us.
+			recover()
+			err = c.currConn.PSubscribe(patterns...)
+			if err != nil {
+				break
+			}
+		}
+
+		for _, pattern := range patterns {
+			c.subscribedPatterns[pattern] = true
+		}
+
+	case patterns := <-c.unsubscribeChan:
+		toUnsubscribe := make([]interface{}, 0, len(patterns))
+		for _, pattern := range patterns {
+			if c.subscribedPatterns[pattern] {
+				toUnsubscribe = append(toUnsubscribe, pattern)
+				delete(c.subscribedPatterns, pattern)
+			}
+		}
+
+		if err = c.currConn.PUnsubscribe(toUnsubscribe...); err != nil {
+			errCode, errMsg = "unsubscribe_error", "Redis PUnsubscribe command error"
+			// We don't need to retry here, since we've already removed the specific subscriptions
+			// from the subscribedPatterns field, so when we recover the connection belo it will
+			// come back already unsubscribed from the requested patterns.
+		}
+
+	case msg := <-msgChan:
+		switch v := msg.(type) {
+		case redis.Message:
+			c.outputChan <- v
+
+		case redis.Pong:
+			pongTimeoutChan = nil
+
+		case error:
+			err, errCode, errMsg = v, "pubsub_error", "Redis pub/sub error"
+		}
+	}
+	return
 }
 
 // Retries to reset pub/sub connection until no error occurrs
