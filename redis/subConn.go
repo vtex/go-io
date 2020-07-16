@@ -98,6 +98,21 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 		*pongTimeoutChan = time.Tick(pongTimeout)
 		return nil, "", ""
 
+	case msg := <-msgChan:
+		switch v := msg.(type) {
+		case redis.Pong:
+			pongTimeoutChan = nil
+			return nil, "", ""
+
+		case redis.Message:
+			c.outputChan <- v
+			return nil, "", ""
+
+		case error:
+			return v, "pubsub_error", "Redis pub/sub error"
+		}
+		return errors.New("Unknown message type"), "unknown_msg_type", "An unknown message type was received from Redis"
+
 	case <-*pongTimeoutChan:
 		*pongTimeoutChan = nil
 		return errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
@@ -135,21 +150,6 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 			return err, "unsubscribe_error", "Redis PUnsubscribe command error"
 		}
 		return nil, "", ""
-
-	case msg := <-msgChan:
-		switch v := msg.(type) {
-		case redis.Message:
-			c.outputChan <- v
-			return nil, "", ""
-
-		case redis.Pong:
-			pongTimeoutChan = nil
-			return nil, "", ""
-
-		case error:
-			return v, "pubsub_error", "Redis pub/sub error"
-		}
-		return errors.New("Unknown message type"), "unknown_msg_type", "An unknown message type was received from Redis"
 	}
 }
 
