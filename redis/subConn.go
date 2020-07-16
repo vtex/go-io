@@ -3,11 +3,18 @@ package redis
 import (
 	"time"
 
+	goErrors "errors"
+
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
 )
 
 const pongTimeout = 5 * time.Second
+
+var (
+	unknownMessageTypeErr = goErrors.New("Unknown message type")
+	pongTimeoutErr        = goErrors.New("Pong timeout")
+)
 
 type subConn struct {
 	pool       *redis.Pool
@@ -111,11 +118,11 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 		case error:
 			return v, "pubsub_error", "Redis pub/sub error"
 		}
-		return errors.New("Unknown message type"), "unknown_msg_type", "An unknown message type was received from Redis"
+		return errors.WithStack(unknownMessageTypeErr), "unknown_msg_type", "An unknown message type was received from Redis"
 
 	case <-*pongTimeoutChan:
 		*pongTimeoutChan = nil
-		return errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
+		return errors.WithStack(pongTimeoutErr), "pong_timeout", "Timed out waiting for Redis ping response"
 
 	case patterns := <-c.subscribeChan:
 		if err = c.currConn.PSubscribe(patterns...); err != nil {
