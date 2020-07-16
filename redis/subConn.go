@@ -149,6 +149,9 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 				delete(c.subscribedPatterns, pattern)
 			}
 		}
+		if len(toUnsubscribe) == 0 {
+			return nil, "", ""
+		}
 
 		if err = c.currConn.PUnsubscribe(toUnsubscribe...); err != nil {
 			// We don't need to retry here, since we've already removed the specific subscriptions
