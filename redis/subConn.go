@@ -92,32 +92,32 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 	select {
 	case <-pingTicker:
 		err = c.currConn.Ping("")
-		if err == nil {
-			*pongTimeoutChan = time.Tick(pongTimeout)
-		} else {
-			errCode, errMsg = "pubsub_ping_error", "Redis error pinging pub/sub connection"
+		if err != nil {
+			return err, "pubsub_ping_error", "Redis error pinging pub/sub connection"
 		}
+		*pongTimeoutChan = time.Tick(pongTimeout)
+		return nil, "", ""
 
 	case <-*pongTimeoutChan:
 		*pongTimeoutChan = nil
-		err, errCode, errMsg = errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
+		return errors.New("Pong timeout"), "pong_timeout", "Timed out waiting for Redis ping response"
 
 	case patterns := <-c.subscribeChan:
 		if err = c.currConn.PSubscribe(patterns...); err != nil {
-			errCode, errMsg = "subscribe_error", "Redis PSubscribe command error"
 			// Retry at most once otherwise just drop the subscription request.
 			// This is a safety guard (instead of retrying indefinitely), in case
 			// some bad input is sent to us.
 			recover()
 			err = c.currConn.PSubscribe(patterns...)
 			if err != nil {
-				break
+				return err, "subscribe_error", "Redis PSubscribe command error"
 			}
 		}
 
 		for _, pattern := range patterns {
 			c.subscribedPatterns[pattern] = true
 		}
+		return nil, "", ""
 
 	case patterns := <-c.unsubscribeChan:
 		toUnsubscribe := make([]interface{}, 0, len(patterns))
@@ -129,25 +129,28 @@ func (c *subConn) mainIteration(pingTicker <-chan time.Time, pongTimeoutChan *<-
 		}
 
 		if err = c.currConn.PUnsubscribe(toUnsubscribe...); err != nil {
-			errCode, errMsg = "unsubscribe_error", "Redis PUnsubscribe command error"
 			// We don't need to retry here, since we've already removed the specific subscriptions
 			// from the subscribedPatterns field, so when we recover the connection belo it will
 			// come back already unsubscribed from the requested patterns.
+			return err, "unsubscribe_error", "Redis PUnsubscribe command error"
 		}
+		return nil, "", ""
 
 	case msg := <-msgChan:
 		switch v := msg.(type) {
 		case redis.Message:
 			c.outputChan <- v
+			return nil, "", ""
 
 		case redis.Pong:
 			pongTimeoutChan = nil
+			return nil, "", ""
 
 		case error:
-			err, errCode, errMsg = v, "pubsub_error", "Redis pub/sub error"
+			return v, "pubsub_error", "Redis pub/sub error"
 		}
+		return errors.New("Unknown message type"), "unknown_msg_type", "An unknown message type was received from Redis"
 	}
-	return
 }
 
 // Retries to reset pub/sub connection until no error occurrs
