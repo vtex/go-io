@@ -76,9 +76,10 @@ type pubSubLoopState struct {
 	parent             *subConn
 	subscribedPatterns map[interface{}]bool
 
+	pingTicker      <-chan time.Time
+	pongTimeoutChan <-chan time.Time
+
 	currConn          *redis.PubSubConn
-	pingTicker        <-chan time.Time
-	pongTimeoutChan   <-chan time.Time
 	msgChan           <-chan interface{}
 	cancelCurrMsgChan func()
 }
@@ -92,31 +93,20 @@ func startMainLoop(parent *subConn) error {
 	if err := loopState.resetConn(); err != nil {
 		return err
 	}
-	done := make(chan struct{})
-	loopState.msgChan = connReceiveChan(loopState.currConn, done)
-	loopState.cancelCurrMsgChan = func() { close(done) }
 
 	go func() {
-		recoverConn := func() {
-			loopState.cancelCurrMsgChan()
-			loopState.recoverConn()
-
-			done := make(chan struct{})
-			loopState.msgChan = connReceiveChan(loopState.currConn, done)
-			loopState.cancelCurrMsgChan = func() { close(done) }
-		}
 		for {
-			err, errCode, errMsg := loopState.mainIteration(recoverConn)
+			err, errCode, errMsg := loopState.mainIteration()
 			if err != nil {
 				logError(err, errCode, "", "", errMsg)
-				recoverConn()
+				loopState.recoverConn()
 			}
 		}
 	}()
 	return nil
 }
 
-func (s *pubSubLoopState) mainIteration(recoverConn func()) (err error, errCode, errMsg string) {
+func (s *pubSubLoopState) mainIteration() (err error, errCode, errMsg string) {
 	select {
 	case <-s.pingTicker:
 		err = s.currConn.Ping("")
@@ -150,7 +140,7 @@ func (s *pubSubLoopState) mainIteration(recoverConn func()) (err error, errCode,
 			// Retry at most once otherwise just drop the subscription request.
 			// This is a safety guard (instead of retrying indefinitely), in case
 			// some bad input is sent to us.
-			recoverConn()
+			s.recoverConn()
 			err = s.currConn.PSubscribe(patterns...)
 			if err != nil {
 				return err, "subscribe_error", "Redis PSubscribe command error"
@@ -185,12 +175,12 @@ func (s *pubSubLoopState) mainIteration(recoverConn func()) (err error, errCode,
 }
 
 // Retries to reset pub/sub connection until no error occurrs
-func (c *pubSubLoopState) recoverConn() {
-	err := c.currConn.Conn.Err()
+func (s *pubSubLoopState) recoverConn() {
+	err := s.currConn.Conn.Err()
 	logError(err, "redis_conn_recover", "", "", "Recovering Redis connection due to error")
 
 	for {
-		err := c.resetConn()
+		err := s.resetConn()
 		if err == nil {
 			break
 		}
@@ -199,8 +189,8 @@ func (c *pubSubLoopState) recoverConn() {
 	}
 }
 
-func (c *pubSubLoopState) resetConn() error {
-	psc := &redis.PubSubConn{Conn: c.parent.pool.Get()}
+func (s *pubSubLoopState) resetConn() error {
+	psc := &redis.PubSubConn{Conn: s.parent.pool.Get()}
 
 	// In order to always have a Redis connection in the PUB/SUB state (which
 	// changes the PING behavior for example), subscribe to a dummy channel that
@@ -211,9 +201,9 @@ func (c *pubSubLoopState) resetConn() error {
 		return errors.Wrap(err, "Failed to subscribe to test channel")
 	}
 
-	if len(c.subscribedPatterns) > 0 {
-		patterns := make([]interface{}, 0, len(c.subscribedPatterns))
-		for p := range c.subscribedPatterns {
+	if len(s.subscribedPatterns) > 0 {
+		patterns := make([]interface{}, 0, len(s.subscribedPatterns))
+		for p := range s.subscribedPatterns {
 			patterns = append(patterns, p)
 		}
 		if err := psc.PSubscribe(patterns...); err != nil {
@@ -222,11 +212,15 @@ func (c *pubSubLoopState) resetConn() error {
 		}
 	}
 
-	prevConn := c.currConn
-	c.currConn = psc
-	if prevConn != nil {
-		prevConn.Close()
+	if s.currConn != nil {
+		s.cancelCurrMsgChan()
+		s.currConn.Close()
 	}
+
+	done := make(chan struct{})
+	s.currConn = psc
+	s.msgChan = connReceiveChan(psc, done)
+	s.cancelCurrMsgChan = func() { close(done) }
 	return nil
 }
 
