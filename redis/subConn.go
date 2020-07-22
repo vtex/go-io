@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"context"
 	"time"
 
 	goErrors "errors"
@@ -217,14 +218,14 @@ func (s *pubSubLoopState) resetConn() error {
 		s.currConn.Close()
 	}
 
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	s.currConn = psc
-	s.msgChan = connReceiveChan(psc, done)
-	s.cancelCurrMsgChan = func() { close(done) }
+	s.msgChan = connReceiveChan(ctx, psc)
+	s.cancelCurrMsgChan = cancel
 	return nil
 }
 
-func connReceiveChan(conn *redis.PubSubConn, done <-chan struct{}) <-chan interface{} {
+func connReceiveChan(ctx context.Context, conn *redis.PubSubConn) <-chan interface{} {
 	msgChan := make(chan interface{}, 10)
 	go func() {
 		for {
@@ -233,7 +234,7 @@ func connReceiveChan(conn *redis.PubSubConn, done <-chan struct{}) <-chan interf
 			}
 			select {
 			case msgChan <- conn.Receive():
-			case <-done:
+			case <-ctx.Done():
 				return
 			}
 		}
