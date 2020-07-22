@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	pongTimeout      = 5 * time.Second
-	subscribeTimeout = 10 * time.Second
+	channelsBuffersSize = 100
+	pongTimeout         = 5 * time.Second
+	subscribeTimeout    = 3 * time.Second
 )
 
 var (
@@ -35,9 +36,9 @@ func newSubConn(endpoint string) (*subConn, error) {
 			MaxIdle:        1,
 			SetReadTimeout: false,
 		}),
-		outputChan:      make(chan redis.Message, 10),
-		subscribeChan:   make(chan []interface{}, 10),
-		unsubscribeChan: make(chan []interface{}, 10),
+		outputChan:      make(chan redis.Message, channelsBuffersSize),
+		subscribeChan:   make(chan []interface{}, channelsBuffersSize),
+		unsubscribeChan: make(chan []interface{}, channelsBuffersSize),
 	}
 
 	err := startMainLoop(subConn)
@@ -65,6 +66,10 @@ func (c *subConn) PUnsubscribe(patterns []interface{}) error {
 		return errors.New("Must send at least one pattern to unsubscribe")
 	}
 
+	// Since this is almost a clean-up done after the consumers are done with us,
+	// we don't have a timeout here so we don't risk leaving an inconsistent state.
+	// If we have any problems with this, consider moving this to a background
+	// routine so we don't block the caller.
 	c.unsubscribeChan <- patterns
 	return nil
 }
@@ -226,7 +231,7 @@ func (s *pubSubLoopState) resetConn() error {
 }
 
 func connReceiveChan(ctx context.Context, conn *redis.PubSubConn) <-chan interface{} {
-	msgChan := make(chan interface{}, 10)
+	msgChan := make(chan interface{}, channelsBuffersSize)
 	go func() {
 		for {
 			if conn.Conn.Err() != nil {
