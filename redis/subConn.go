@@ -85,9 +85,9 @@ type pubSubLoopState struct {
 	pingTicker      <-chan time.Time
 	pongTimeoutChan <-chan time.Time
 
-	currConn          *redis.PubSubConn
-	msgChan           <-chan interface{}
-	cancelCurrMsgChan func()
+	currConn     *redis.PubSubConn
+	msgChan      <-chan interface{}
+	closeMsgChan func()
 }
 
 func startMainLoop(parent *subConn) error {
@@ -219,20 +219,22 @@ func (s *pubSubLoopState) resetConn() error {
 	}
 
 	if s.currConn != nil {
-		s.cancelCurrMsgChan()
+		s.closeMsgChan()
 		s.currConn.Close()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.currConn = psc
-	s.msgChan = connReceiveChan(ctx, psc)
-	s.cancelCurrMsgChan = cancel
+	s.msgChan = connReceiveChan(ctx, psc, s.msgChan)
+	s.closeMsgChan = cancel
 	return nil
 }
 
-func connReceiveChan(ctx context.Context, conn *redis.PubSubConn) <-chan interface{} {
+func connReceiveChan(ctx context.Context, conn *redis.PubSubConn, oldChan <-chan interface{}) <-chan interface{} {
 	msgChan := make(chan interface{}, channelsBuffersSize)
 	go func() {
+		defer close(msgChan)
+		drainOldMsgChan(msgChan, oldChan)
 		for {
 			if conn.Conn.Err() != nil {
 				return
@@ -245,4 +247,18 @@ func connReceiveChan(ctx context.Context, conn *redis.PubSubConn) <-chan interfa
 		}
 	}()
 	return msgChan
+}
+
+func drainOldMsgChan(newChan chan<- interface{}, oldChan <-chan interface{}) {
+	if oldChan == nil {
+		return
+	}
+	for msg := range oldChan {
+		if _, isRedisMsg := msg.(redis.Message); isRedisMsg {
+			// We know this won't block since we only create a new channel
+			// after (triggering) closing of the previous one, and all of
+			// them have the same buffer size.
+			newChan <- msg
+		}
+	}
 }
