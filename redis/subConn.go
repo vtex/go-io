@@ -239,8 +239,9 @@ func connReceiveChan(ctx context.Context, conn *redis.PubSubConn, oldChan <-chan
 			if conn.Conn.Err() != nil {
 				return
 			}
+			msg := conn.Receive()
 			select {
-			case msgChan <- conn.Receive():
+			case msgChan <- msg:
 			case <-ctx.Done():
 				return
 			}
