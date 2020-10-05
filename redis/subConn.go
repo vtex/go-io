@@ -17,8 +17,7 @@ const (
 )
 
 var (
-	unknownMessageTypeErr = goErrors.New("Unknown message type")
-	pongTimeoutErr        = goErrors.New("Pong timeout")
+	pongTimeoutErr = goErrors.New("Pong timeout")
 )
 
 type subConn struct {
@@ -132,10 +131,14 @@ func (s *pubSubLoopState) mainIteration() (err error, errCode, errMsg string) {
 			s.parent.outputChan <- v
 			return nil, "", ""
 
+		case redis.Subscription:
+			// This is received as a response to P(UN)SUB cmds and we can simply ignore.
+			return nil, "", ""
+
 		case error:
 			return v, "pubsub_error", "Redis pub/sub error"
 		}
-		return errors.WithStack(unknownMessageTypeErr), "unknown_msg_type", "An unknown message type was received from Redis"
+		return errors.Errorf("Unknown message type: %v", msg), "unknown_msg_type", "An unknown message type was received from Redis"
 
 	case <-s.pongTimeoutChan:
 		s.pongTimeoutChan = nil
