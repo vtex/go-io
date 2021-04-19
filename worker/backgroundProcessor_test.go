@@ -12,6 +12,7 @@ import (
 
 func TestBackgroundProcessor(t *testing.T) {
 	redis := stubs.NewRedis()
+	backoff := 1 * time.Second
 
 	Convey("Does not schedule repeated jobs", t, withTimeout(func() {
 		blocker := make(chan struct{})
@@ -23,8 +24,8 @@ func TestBackgroundProcessor(t *testing.T) {
 			return 0
 		})
 
-		So(processor.Schedule("jobKey", nil), ShouldBeTrue)
-		So(processor.Schedule("jobKey", nil), ShouldBeFalse)
+		So(processor.Schedule("jobKey", backoff, nil), ShouldBeTrue)
+		So(processor.Schedule("jobKey", backoff, nil), ShouldBeFalse)
 		close(blocker)
 
 		So(<-resultChan, ShouldBeTrue)
@@ -39,11 +40,11 @@ func TestBackgroundProcessor(t *testing.T) {
 			return 0
 		})
 
-		So(processor.Schedule("jobKey", nil), ShouldBeTrue)
+		So(processor.Schedule("jobKey", backoff, nil), ShouldBeTrue)
 		So(<-resultChan, ShouldBeTrue)
 		time.Sleep(10 * time.Millisecond)
 
-		So(processor.Schedule("jobKey", nil), ShouldBeTrue)
+		So(processor.Schedule("jobKey", backoff, nil), ShouldBeTrue)
 		So(<-resultChan, ShouldBeTrue)
 	}))
 
@@ -56,7 +57,7 @@ func TestBackgroundProcessor(t *testing.T) {
 			panic("omg! 😱")
 		})
 
-		So(processor.Schedule("jobKey", nil), ShouldBeTrue)
+		So(processor.Schedule("jobKey", backoff, nil), ShouldBeTrue)
 		<-done
 
 		So(executed, ShouldBeTrue)
@@ -75,7 +76,7 @@ func TestBackgroundProcessor(t *testing.T) {
 		})
 
 		for i := 0; i < numJobs; i++ {
-			So(processor.Schedule(fmt.Sprint("job", i), i), ShouldBeTrue)
+			So(processor.Schedule(fmt.Sprint("job", i), backoff, i), ShouldBeTrue)
 		}
 		wg.Wait()
 
@@ -100,7 +101,7 @@ func TestBackgroundProcessor(t *testing.T) {
 		})
 
 		for i := 0; i < numJobs; i++ {
-			So(processor.Schedule(fmt.Sprint("job", i), i), ShouldBeTrue)
+			So(processor.Schedule(fmt.Sprint("job", i), backoff, i), ShouldBeTrue)
 		}
 		wg.Wait()
 
@@ -124,7 +125,7 @@ func TestBackgroundProcessor(t *testing.T) {
 		})
 
 		for i := 0; i < numJobs; i++ {
-			So(processor.Schedule(fmt.Sprint("job", i), i), ShouldBeTrue)
+			So(processor.Schedule(fmt.Sprint("job", i), backoff, i), ShouldBeTrue)
 		}
 		wg.Wait()
 

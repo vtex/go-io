@@ -23,9 +23,16 @@ const generationKey = "goio:bgProcessor:generation"
 // There's no interface for stopping the background go-routine for now.
 type BackgroundProcessor interface {
 	// Schedule enqueues the job to be executed in the background, in case it's not
-	// already scheduled. Returns true if job was scheduled now or false if it was
-	// already in the queue for execution.
-	Schedule(key string, arg interface{}) bool
+	// already scheduled.
+	//
+	// The `key` argument serves for deduplicating jobs and the `remoteBackoff` arg
+	// is how long that key should be held unschedulable in the remote cache. The
+	// `arg` is passed to the process function as is when it is time for processing
+	// this entry.
+	//
+	// Returns true if job was scheduled now or false if it was already in the local
+	// queue for execution or held unschedulable in the remote cache.
+	Schedule(key string, remoteBackoff time.Duration, arg interface{}) bool
 	// QueueLength returns the current number of scheduled jobs in the local queue.
 	QueueLength() int
 	// BumpRemoteDedupKey increments the base key used for dedupping jobs in the
@@ -55,22 +62,16 @@ type bgProcessor struct {
 	maxJobInterval time.Duration
 }
 
-func (p *bgProcessor) Schedule(key string, arg interface{}) bool {
-	backoff := getAccountBackoff(key)
-	if !p.shouldEnqueueJob(key, backoff) {
+func (p *bgProcessor) Schedule(key string, remoteBackoff time.Duration, arg interface{}) bool {
+	if !p.shouldEnqueueJob(key, remoteBackoff) {
 		return false
 	}
-	p.jobQueue.Enqueue(&scheduledJob{
-		key:           key,
-		arg:           arg,
-		scheduledTime: time.Now(),
-		remoteBackoff: backoff,
-	})
+	p.jobQueue.Enqueue(&scheduledJob{key, arg, time.Now(), remoteBackoff})
 	return true
 }
 
 func (p *bgProcessor) QueueLength() int {
-	return len(p.jobQueue.queue)
+	return p.jobQueue.Len()
 }
 
 func (p *bgProcessor) BumpRemoteDedupKey() error {
@@ -103,7 +104,7 @@ func (p *bgProcessor) shouldEnqueueJob(jobKey string, remoteBackoff time.Duratio
 }
 
 func (p *bgProcessor) worstCaseQueueDelay() time.Duration {
-	return p.maxJobInterval * time.Duration(p.jobQueue.Len())
+	return p.maxJobInterval * time.Duration(p.QueueLength())
 }
 
 func max(d1, d2 time.Duration) time.Duration {
@@ -137,12 +138,15 @@ func (p *bgProcessor) processOne(job *scheduledJob) time.Duration {
 	defer recoverAndLog(job)
 	defer p.scheduledJobs.Delete(job.key)
 	defer func() {
-		timeSinceScheduled := time.Now().Sub(job.scheduledTime)
+		timeSinceScheduled := time.Since(job.scheduledTime)
 		remainingBackoff := job.remoteBackoff - timeSinceScheduled
+		dedupKey := p.remoteDedupKey(job.key)
 		if remainingBackoff < 0 {
-			p.cache.Del(p.remoteDedupKey(job.key))
+			p.cache.Del(dedupKey)
 		} else {
-			p.cache.Set(p.remoteDedupKey(job.key), job.key, remainingBackoff)
+			// This is in case we scheduled the job assuming the worst-case queue
+			// delay, so that it doesn't stay indefinitely unschedulable.
+			p.cache.Set(dedupKey, job.key, remainingBackoff)
 		}
 	}()
 
