@@ -6,21 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vtex/go-sdk/utils/metrics"
-
 	. "github.com/smartystreets/goconvey/convey"
-	"github.com/vtex/apps/api/testutils"
-	"github.com/vtex/apps/cache"
+	"github.com/vtex/go-io/redis/stubs"
 )
 
 func TestBackgroundProcessor(t *testing.T) {
-	cache.InitRedisWith(testutils.NewFakeRedis())
-	metrics.InitFakeTracker()
+	redis := stubs.NewRedis()
 
 	Convey("Does not schedule repeated jobs", t, withTimeout(func() {
 		blocker := make(chan struct{})
 		resultChan := make(chan bool, 1)
-		processor := StartBackgroundProcessor(5, func(interface{}) time.Duration {
+		processor := NewBackgroundProcessor(5, redis, func(interface{}) time.Duration {
 			defer close(resultChan)
 			<-blocker
 			resultChan <- true
@@ -38,7 +34,7 @@ func TestBackgroundProcessor(t *testing.T) {
 
 	Convey("Schedules repeated jobs after executed", t, withTimeout(func() {
 		resultChan := make(chan bool, 2)
-		processor := StartBackgroundProcessor(5, func(interface{}) time.Duration {
+		processor := NewBackgroundProcessor(5, redis, func(interface{}) time.Duration {
 			resultChan <- true
 			return 0
 		})
@@ -54,7 +50,7 @@ func TestBackgroundProcessor(t *testing.T) {
 	Convey("Recovers from panics in jobs", t, withTimeout(func() {
 		done := make(chan struct{})
 		executed := false
-		processor := StartBackgroundProcessor(5, func(interface{}) time.Duration {
+		processor := NewBackgroundProcessor(5, redis, func(interface{}) time.Duration {
 			defer close(done)
 			executed = true
 			panic("omg! 😱")
@@ -72,7 +68,7 @@ func TestBackgroundProcessor(t *testing.T) {
 		wg.Add(numJobs)
 
 		receivedArgs := map[int]bool{}
-		processor := StartBackgroundProcessor(5, func(idx interface{}) time.Duration {
+		processor := NewBackgroundProcessor(5, redis, func(idx interface{}) time.Duration {
 			defer wg.Done()
 			receivedArgs[idx.(int)] = true
 			return 0
@@ -95,7 +91,7 @@ func TestBackgroundProcessor(t *testing.T) {
 
 		startTimes := make([]time.Time, numJobs)
 		endTimes := make([]time.Time, numJobs)
-		processor := StartBackgroundProcessor(numJobs, func(idx interface{}) time.Duration {
+		processor := NewBackgroundProcessor(numJobs, redis, func(idx interface{}) time.Duration {
 			defer wg.Done()
 			startTimes[idx.(int)] = time.Now()
 			time.Sleep(5 * time.Millisecond)
@@ -121,7 +117,7 @@ func TestBackgroundProcessor(t *testing.T) {
 		wg.Add(numJobs)
 
 		execTimes := make([]time.Time, numJobs)
-		processor := StartBackgroundProcessor(numJobs, func(idx interface{}) time.Duration {
+		processor := NewBackgroundProcessor(numJobs, redis, func(idx interface{}) time.Duration {
 			defer wg.Done()
 			execTimes[idx.(int)] = time.Now()
 			return execInterval

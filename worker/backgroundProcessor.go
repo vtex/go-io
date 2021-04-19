@@ -1,4 +1,4 @@
-package housekeeping
+package worker
 
 import (
 	"fmt"
@@ -7,10 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vtex/go-sdk/utils/metrics"
-
 	"github.com/sirupsen/logrus"
-	"github.com/vtex/apps/cache"
 	"github.com/vtex/go-io/redis"
 )
 
@@ -27,17 +24,18 @@ type BackgroundProcessor interface {
 	// already scheduled. Returns true if job was scheduled now or false if it was
 	// already in the queue for execution.
 	Schedule(account string, arg interface{}) bool
+	QueueLength() int
 
 	ClearRemoteQueue() error
 }
 
 type JobFn func(interface{}) time.Duration
 
-func StartBackgroundProcessor(initialCapacity int, processFunc JobFn) BackgroundProcessor {
+func NewBackgroundProcessor(initialCapacity int, redis redis.Cache, processFunc JobFn) BackgroundProcessor {
 	processor := &bgProcessor{
 		jobQueue:    NewSyncQueue(initialCapacity),
+		cache:       redis,
 		processFunc: processFunc,
-		cache:       cache.Redis(),
 	}
 	go processor.mainLoop()
 	return processor
@@ -45,8 +43,8 @@ func StartBackgroundProcessor(initialCapacity int, processFunc JobFn) Background
 
 type bgProcessor struct {
 	jobQueue      *SyncQueue
-	scheduledJobs sync.Map
 	cache         redis.Cache
+	scheduledJobs sync.Map
 
 	processFunc    JobFn
 	maxJobInterval time.Duration
@@ -64,6 +62,10 @@ func (p *bgProcessor) Schedule(account string, arg interface{}) bool {
 		accountBackoff: accountBackoff,
 	})
 	return true
+}
+
+func (p *bgProcessor) QueueLength() int {
+	return len(p.jobQueue.queue)
 }
 
 func (p *bgProcessor) ClearRemoteQueue() error {
@@ -118,7 +120,6 @@ func (p *bgProcessor) mainLoop() {
 	defer recoverAndLog(nil)
 
 	for {
-		metrics.GetTracker().Observe("housekeeping_queue_length", int64(p.jobQueue.Len()), nil)
 		interval := p.processOne(p.jobQueue.Dequeue().(*scheduledJob))
 		if interval > p.maxJobInterval {
 			p.maxJobInterval = interval
