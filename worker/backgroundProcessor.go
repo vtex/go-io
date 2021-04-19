@@ -10,7 +10,7 @@ import (
 	"github.com/vtex/go-io/redis"
 )
 
-const generationKey = "goio:bgProcessor:generation"
+const generationKey = "goio.bgProcessor.generation"
 
 // BackgroundProcessor is a utility for running jobs in the background, avoiding
 // the rescheduling of the same job by a provided key. The rescheduling prevention
@@ -166,7 +166,7 @@ func (p *bgProcessor) remoteDedupKey(jobKey string) string {
 		// fallback to generation 0
 		generation = 0
 	}
-	key := fmt.Sprintf("goio:bgProcessor:dedupKey:gen:%d:jobKey:%s", generation, jobKey)
+	key := fmt.Sprintf("goio.bgProcessor.dedupKey:gen:%d:jobKey:%s", generation, jobKey)
 	return key
 }
 
