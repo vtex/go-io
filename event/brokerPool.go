@@ -28,7 +28,6 @@ type BrokerPool interface {
 func NewPool(factory EventSourceFactory) BrokerPool {
 	return &brokerPool{
 		factory: factory,
-		brokers: map[string]*poolEntry{},
 	}
 }
 
@@ -36,61 +35,66 @@ type brokerPool struct {
 	factory EventSourceFactory
 
 	lock    sync.RWMutex
-	brokers map[string]*poolEntry
+	brokers sync.Map
 }
 
 type poolEntry struct {
-	id     string
-	broker Broker
-	stopFn func()
+	id string
+
+	initOnce sync.Once
+	initErr  error
+	broker   Broker
+	stopFn   func()
+}
+
+func (e *poolEntry) init(factory EventSourceFactory, factoryArg interface{}) (bool, error) {
+	var inited bool
+	e.initOnce.Do(func() {
+		inited = true
+		ctx, cancel := context.WithCancel(context.Background())
+		source, err := factory(ctx, e.id, factoryArg)
+		if err != nil {
+			cancel()
+			e.initErr = err
+			return
+		}
+
+		e.broker = NewBroker(ctx, source)
+		e.stopFn = cancel
+	})
+	return inited, e.initErr
 }
 
 func (p *brokerPool) Subscribe(ctx context.Context, id string, factoryArg interface{}) (EventSource, error) {
-	p.lock.RLock()
-	if entry, ok := p.brokers[id]; ok {
-		defer p.lock.RUnlock()
-		return p.subscribeLocked(ctx, entry)
+	entryIface, _ := p.brokers.LoadOrStore(id, &poolEntry{id: id})
+	entry := entryIface.(*poolEntry)
+	if entry.broker != nil {
+		return p.subscribe(ctx, entry)
 	}
-	p.lock.RUnlock()
 
-	entry, err := p.createBroker(id, factoryArg)
+	inited, err := entry.init(p.factory, factoryArg)
 	if err != nil {
+		if inited {
+			// Only the routine that actually did the init removes the broker from the pool
+			// to avoid any race conditions with concurrent Deletes and LoadOrStores.
+			p.brokers.Delete(id)
+		}
 		return nil, err
 	}
-
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if existing, ok := p.brokers[id]; ok {
-		entry.stopFn()
-		entry = existing
-	} else {
-		p.brokers[id] = entry
-	}
-
-	return p.subscribeLocked(ctx, entry)
+	return p.subscribe(ctx, entry)
 }
 
-func (p *brokerPool) createBroker(id string, factoryArg interface{}) (*poolEntry, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	source, err := p.factory(ctx, id, factoryArg)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-
-	broker := NewBroker(ctx, source)
-	return &poolEntry{id, broker, cancel}, nil
-}
-
-// This function must be called in whilst locked in the broker pool, otherwise
-// it could be executed concurrently with the unsubscribe function below, which
-// could cause an invalid state to arise. It could be an RLock just fine, as the
-// unsubscribe always grab a (W)Lock itself.
+// This function must grab a lock, otherwise it could be executed concurrently
+// with the unsubscribe function below which could cause an invalid state to
+// arise. It can be an RLock since it doesn't modify the pool, and the
+// unsubscribe always grabs a (W)Lock itself.
 //
 // e.g. If not locked, unsubscribe could stop and remove the broker from the
 // pool right before this one attempts to create a subscription.
-func (p *brokerPool) subscribeLocked(ctx context.Context, entry *poolEntry) (EventSource, error) {
+func (p *brokerPool) subscribe(ctx context.Context, entry *poolEntry) (EventSource, error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	sub, err := entry.broker.Subscribe(ctx)
 	if err != nil {
 		return nil, err
@@ -107,7 +111,7 @@ func (p *brokerPool) unsubscribe(entry *poolEntry, sub EventSource) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if _, ok := p.brokers[entry.id]; !ok {
+	if _, ok := p.brokers.Load(entry.id); !ok {
 		logrus.WithFields(logrus.Fields{
 			"code":   "broker_not_found_err",
 			"subsId": entry.id,
@@ -124,7 +128,7 @@ func (p *brokerPool) unsubscribe(entry *poolEntry, sub EventSource) {
 			Error("Thought valid subscription not found in origin broker")
 	}
 	if !hasMore {
-		delete(p.brokers, entry.id)
+		p.brokers.Delete(entry.id)
 		entry.stopFn()
 	}
 }
