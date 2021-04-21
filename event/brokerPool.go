@@ -66,11 +66,14 @@ func (e *poolEntry) init(factory EventSourceFactory, factoryArg interface{}) (bo
 }
 
 func (p *brokerPool) Subscribe(ctx context.Context, id string, factoryArg interface{}) (EventSource, error) {
+	p.lock.RLock()
 	entryIface, _ := p.brokers.LoadOrStore(id, &poolEntry{id: id})
 	entry := entryIface.(*poolEntry)
 	if entry.broker != nil {
-		return p.subscribe(ctx, entry)
+		defer p.lock.RUnlock()
+		return p.subscribeLocked(ctx, entry)
 	}
+	p.lock.RUnlock()
 
 	inited, err := entry.init(p.factory, factoryArg)
 	if err != nil {
@@ -81,7 +84,9 @@ func (p *brokerPool) Subscribe(ctx context.Context, id string, factoryArg interf
 		}
 		return nil, err
 	}
-	return p.subscribe(ctx, entry)
+	p.lock.RLock()
+	defer p.lock.RLock()
+	return p.subscribeLocked(ctx, entry)
 }
 
 // This function must grab a lock, otherwise it could be executed concurrently
@@ -91,10 +96,7 @@ func (p *brokerPool) Subscribe(ctx context.Context, id string, factoryArg interf
 //
 // e.g. If not locked, unsubscribe could stop and remove the broker from the
 // pool right before this one attempts to create a subscription.
-func (p *brokerPool) subscribe(ctx context.Context, entry *poolEntry) (EventSource, error) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
+func (p *brokerPool) subscribeLocked(ctx context.Context, entry *poolEntry) (EventSource, error) {
 	sub, err := entry.broker.Subscribe(ctx)
 	if err != nil {
 		return nil, err
