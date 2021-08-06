@@ -72,6 +72,14 @@ func InitClient() {
 	client = &prometheusClient{}
 }
 
+func GetRegisterer() prometheus.Registerer {
+	if client == nil {
+		panic("Can't get registerer before initing client")
+	}
+
+	return prometheus.DefaultRegisterer
+}
+
 func GetClient() PrometheusClient {
 	if client == nil {
 		panic("Init the prometheus client before access it")
