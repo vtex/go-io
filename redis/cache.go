@@ -53,6 +53,25 @@ func New(conf RedisConfig) Cache {
 		conf.MaxActiveConns = 20
 	}
 
+	if conf.ClusterMode {
+		cluster, err := redisCluster.NewCluster(
+			&redisCluster.Options{
+				StartNodes:   []string{conf.Endpoint},
+				ConnTimeout:  50 * time.Millisecond,
+				ReadTimeout:  200 * time.Millisecond,
+				WriteTimeout: 200 * time.Millisecond,
+				KeepAlive:    16,
+				AliveTime:    60 * time.Second,
+			})
+
+		if err != nil {
+			// TODO: validate if we want to panic here or recovery
+			panic(err)
+		}
+
+		return &redisC{cluster: &cluster, conf: conf}
+	}
+
 	pool := newRedisPool(conf.Endpoint, poolOptions{
 		MaxIdle:        conf.MaxIdleConns,
 		MaxActive:      conf.MaxActiveConns,
