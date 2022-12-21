@@ -7,6 +7,7 @@ import (
 
 	"time"
 
+	redisCluster "github.com/chasex/redis-go-cluster"
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
 	"github.com/vtex/go-io/cache"
@@ -21,6 +22,7 @@ type TimeTracker func(kpiName string, startTime time.Time)
 
 type RedisConfig struct {
 	Endpoint       string
+	ClusterMode    bool
 	KeyNamespace   string
 	TimeTracker    TimeTracker
 	MaxIdleConns   int
