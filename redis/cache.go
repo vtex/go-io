@@ -212,6 +212,7 @@ func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	}
 
 	// If it doesn't have the pool, then we're on cluster mode
+	defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
 	return (*r.cluster).Do(cmd, args...)
 }
 
