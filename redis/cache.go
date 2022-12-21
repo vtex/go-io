@@ -1,13 +1,14 @@
 package redis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"time"
 
-	redisCluster "github.com/chasex/redis-go-cluster"
+	redisCluster "github.com/go-redis/redis/v8"
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
 	"github.com/vtex/go-io/cache"
@@ -53,6 +54,19 @@ func New(conf RedisConfig) Cache {
 		conf.MaxActiveConns = 20
 	}
 
+	if conf.ClusterMode {
+		cluster := redisCluster.NewClusterClient(
+			&redisCluster.ClusterOptions{
+				Addrs:        []string{conf.Endpoint},
+				ReadTimeout:  200 * time.Millisecond,
+				WriteTimeout: 200 * time.Millisecond,
+				DialTimeout:  1 * time.Second,
+			},
+		)
+
+		return &redisC{cluster: cluster, conf: conf}
+	}
+
 	pool := newRedisPool(conf.Endpoint, poolOptions{
 		MaxIdle:        conf.MaxIdleConns,
 		MaxActive:      conf.MaxActiveConns,
@@ -63,7 +77,7 @@ func New(conf RedisConfig) Cache {
 
 type redisC struct {
 	pool    *redis.Pool
-	cluster *redisCluster.Cluster
+	cluster *redisCluster.ClusterClient
 	conf    RedisConfig
 }
 
@@ -184,17 +198,22 @@ func (r *redisC) remoteKey(key string) (string, error) {
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
-	if r.pool != nil {
-		conn := r.getConnection()
-		defer r.closeConnection(conn)
-
+	if r.cluster != nil {
+		// If it doesn't have the pool, then we're on cluster mode
 		defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
-		return conn.Do(cmd, args...)
+		result, err := r.cluster.Do(context.Background(), append([]interface{}{cmd}, args...)...).Result()
+		if err == redisCluster.Nil {
+			return result, nil
+		}
+
+		return result, err
 	}
 
-	// If it doesn't have the pool, then we're on cluster mode
+	conn := r.getConnection()
+	defer r.closeConnection(conn)
+
 	defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
-	return (*r.cluster).Do(cmd, args...)
+	return conn.Do(cmd, args...)
 }
 
 func (r *redisC) getConnection() redis.Conn {
