@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
+	github.com/chasex/redis-go-cluster v1.0.0 // indirect
 	github.com/die-net/lrucache v0.0.0-20171111232917-04b9315ab7a6
 	github.com/gin-contrib/sse v0.0.0-20170109093832-22d885f9ecc7 // indirect
 	github.com/gin-gonic/gin v0.0.0-20171121131845-eeb57848cac0
