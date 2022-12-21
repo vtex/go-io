@@ -62,8 +62,9 @@ func New(conf RedisConfig) Cache {
 }
 
 type redisC struct {
-	pool *redis.Pool
-	conf RedisConfig
+	pool    *redis.Pool
+	cluster *redisCluster.Cluster
+	conf    RedisConfig
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
@@ -183,11 +184,16 @@ func (r *redisC) remoteKey(key string) (string, error) {
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
-	conn := r.getConnection()
-	defer r.closeConnection(conn)
+	if r.pool != nil {
+		conn := r.getConnection()
+		defer r.closeConnection(conn)
 
-	defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
-	return conn.Do(cmd, args...)
+		defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
+		return conn.Do(cmd, args...)
+	}
+
+	// If it doesn't have the pool, then we're on cluster mode
+	return (*r.cluster).Do(cmd, args...)
 }
 
 func (r *redisC) getConnection() redis.Conn {
