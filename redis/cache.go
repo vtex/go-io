@@ -199,7 +199,6 @@ func (r *redisC) remoteKey(key string) (string, error) {
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 	if r.cluster != nil {
-		// If it doesn't have the pool, then we're on cluster mode
 		defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
 		result, err := r.cluster.Do(context.Background(), append([]interface{}{cmd}, args...)...).Result()
 		if err == redisCluster.Nil {
