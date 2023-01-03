@@ -1,12 +1,14 @@
 package redis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"time"
 
+	redisCluster "github.com/go-redis/redis/v8"
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
 	"github.com/vtex/go-io/cache"
@@ -21,6 +23,7 @@ type TimeTracker func(kpiName string, startTime time.Time)
 
 type RedisConfig struct {
 	Endpoint       string
+	ClusterMode    bool
 	KeyNamespace   string
 	TimeTracker    TimeTracker
 	MaxIdleConns   int
@@ -51,6 +54,19 @@ func New(conf RedisConfig) Cache {
 		conf.MaxActiveConns = 20
 	}
 
+	if conf.ClusterMode {
+		cluster := redisCluster.NewClusterClient(
+			&redisCluster.ClusterOptions{
+				Addrs:        []string{conf.Endpoint},
+				ReadTimeout:  200 * time.Millisecond,
+				WriteTimeout: 200 * time.Millisecond,
+				DialTimeout:  1 * time.Second,
+			},
+		)
+
+		return &redisC{cluster: cluster, conf: conf}
+	}
+
 	pool := newRedisPool(conf.Endpoint, poolOptions{
 		MaxIdle:        conf.MaxIdleConns,
 		MaxActive:      conf.MaxActiveConns,
@@ -60,8 +76,9 @@ func New(conf RedisConfig) Cache {
 }
 
 type redisC struct {
-	pool *redis.Pool
-	conf RedisConfig
+	pool    *redis.Pool
+	cluster *redisCluster.ClusterClient
+	conf    RedisConfig
 }
 
 func (r *redisC) Get(key string, result interface{}) (bool, error) {
@@ -181,6 +198,16 @@ func (r *redisC) remoteKey(key string) (string, error) {
 }
 
 func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
+	if r.cluster != nil {
+		defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
+		result, err := r.cluster.Do(context.Background(), append([]interface{}{cmd}, args...)...).Result()
+		if err == redisCluster.Nil {
+			return result, nil
+		}
+
+		return result, err
+	}
+
 	conn := r.getConnection()
 	defer r.closeConnection(conn)
 
