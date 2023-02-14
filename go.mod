@@ -8,7 +8,7 @@ require (
 	github.com/gin-contrib/sse v0.0.0-20170109093832-22d885f9ecc7 // indirect
 	github.com/gin-gonic/gin v0.0.0-20171121131845-eeb57848cac0
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gomodule/redigo v0.0.0-20190322064113-39e2c31b7ca3
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20170128230107-5c8f21741620 // indirect
