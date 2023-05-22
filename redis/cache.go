@@ -202,7 +202,7 @@ func (r *redisC) doCmd(cmd string, args ...interface{}) (interface{}, error) {
 		defer r.conf.TimeTracker(commandKpiName(cmd), time.Now())
 		result, err := r.cluster.Do(context.Background(), append([]interface{}{cmd}, args...)...).Result()
 		if err == redisCluster.Nil {
-			return result, nil
+			return result, redis.ErrNil
 		}
 
 		return result, err
