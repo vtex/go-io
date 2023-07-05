@@ -8,9 +8,9 @@ import (
 
 	"time"
 
-	redisCluster "github.com/go-redis/redis/v8"
 	"github.com/gomodule/redigo/redis"
 	"github.com/pkg/errors"
+	redisCluster "github.com/redis/go-redis/v9"
 	"github.com/vtex/go-io/cache"
 	"github.com/vtex/go-io/reflext"
 )
