@@ -1,6 +1,6 @@
 module github.com/vtex/go-io
 
-go 1.23
+go 1.23.0
 
 require (
 	github.com/die-net/lrucache v0.0.0-20171111232917-04b9315ab7a6
@@ -37,8 +37,8 @@ require (
 	github.com/smartystreets/assertions v0.0.0-20161110225557-e60cfa771e3f // indirect
 	github.com/stretchr/testify v1.5.1 // indirect
 	github.com/ugorji/go v0.0.0-20171122102828-84cb69a8af83 // indirect
-	golang.org/x/net v0.0.0-20210428140749-89ef3d95e781 // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect

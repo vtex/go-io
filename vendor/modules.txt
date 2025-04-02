@@ -104,14 +104,13 @@ github.com/smartystreets/goconvey/convey/reporting
 # github.com/ugorji/go v0.0.0-20171122102828-84cb69a8af83
 ## explicit
 github.com/ugorji/go/codec
-# golang.org/x/net v0.0.0-20210428140749-89ef3d95e781
-## explicit; go 1.11
+# golang.org/x/net v0.38.0
+## explicit; go 1.23.0
 # golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 ## explicit
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
-## explicit; go 1.17
-golang.org/x/sys/internal/unsafeheader
+# golang.org/x/sys v0.31.0
+## explicit; go 1.23.0
 golang.org/x/sys/unix
 # golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 ## explicit; go 1.11
